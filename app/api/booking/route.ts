@@ -4,6 +4,10 @@ import path from 'path';
 
 const dbPath = path.join(process.cwd(), 'data.json');
 
+// متغیرهای ابری ورسل
+const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+
 function timeToMins(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -82,8 +86,27 @@ const defaultData = {
 
 let memoryDb: any = null;
 
-function getDb() {
+// خواندن اطلاعات (اول از فضای ابری ورسل، در غیر این صورت فایل لوکال)
+async function getDb() {
+  if (KV_URL && KV_TOKEN) {
+    try {
+      const res = await fetch(`${KV_URL}/get/alef_db`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` },
+        cache: 'no-store'
+      });
+      const data = await res.json();
+      if (data && data.result) {
+        const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+        memoryDb = parsed;
+        return memoryDb;
+      }
+    } catch (err) {
+      console.error('خطا در خواندن از دیتابیس ابری:', err);
+    }
+  }
+
   if (memoryDb) return memoryDb;
+
   try {
     if (!fs.existsSync(dbPath)) {
       fs.writeFileSync(dbPath, JSON.stringify(defaultData, null, 2), 'utf8');
@@ -92,45 +115,6 @@ function getDb() {
     }
     const content = fs.readFileSync(dbPath, 'utf8');
     const parsed = JSON.parse(content);
-
-    if (!parsed.salon_info) parsed.salon_info = defaultData.salon_info;
-    if (!parsed.salon_info.arrival_rule) parsed.salon_info.arrival_rule = defaultData.salon_info.arrival_rule;
-    if (!parsed.salon_info.cancellation_rule) parsed.salon_info.cancellation_rule = defaultData.salon_info.cancellation_rule;
-    if (!parsed.salon_info.address) parsed.salon_info.address = defaultData.salon_info.address;
-
-    if (!parsed.operators || !Array.isArray(parsed.operators) || parsed.operators.length === 0) {
-      parsed.operators = defaultData.operators;
-    } else {
-      const hasFarzad = parsed.operators.some((o: any) => o.username === 'farzad');
-      const hasFarhad = parsed.operators.some((o: any) => o.username === 'farhad');
-      const hasAdmin = parsed.operators.some((o: any) => o.username === 'admin');
-
-      if (!hasFarzad) parsed.operators.unshift(defaultData.operators[0]);
-      if (!hasFarhad) parsed.operators.splice(1, 0, defaultData.operators[1]);
-      if (!hasAdmin) parsed.operators.push(defaultData.operators[2]);
-
-      parsed.operators.forEach((op: any) => {
-        if (op.merchant_id === undefined) op.merchant_id = '';
-      });
-    }
-
-    const todayParts = new Intl.DateTimeFormat('en-US-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-    let ty = '', tm = '', td = '';
-    for (const p of todayParts) {
-      if (p.type === 'year') ty = p.value;
-      if (p.type === 'month') tm = p.value;
-      if (p.type === 'day') td = p.value;
-    }
-    const todayShamsi = `${ty}/${tm}/${td}`;
-    const hasTodayIntervals = (parsed.intervals || []).some((it: any) => it.date === todayShamsi);
-    if (!hasTodayIntervals) {
-      parsed.intervals = generateDefaultIntervals();
-    }
-
-    if (!parsed.portfolios) parsed.portfolios = defaultData.portfolios;
-    if (!parsed.off_days) parsed.off_days = [];
-    if (!parsed.services || parsed.services.length === 0) parsed.services = defaultData.services;
-
     memoryDb = parsed;
     return memoryDb;
   } catch {
@@ -139,23 +123,42 @@ function getDb() {
   }
 }
 
-function saveDb(data: any) {
+// ذخیره دائمی اطلاعات (در فضای ابری ورسل و لوکال)
+async function saveDb(data: any) {
   memoryDb = data;
+
+  if (KV_URL && KV_TOKEN) {
+    try {
+      await fetch(`${KV_URL}/set/alef_db`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${KV_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data),
+        cache: 'no-store'
+      });
+    } catch (err) {
+      console.error('خطا در ذخیره در دیتابیس ابری:', err);
+    }
+  }
+
   try {
     fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error('ذخیره در حافظه انجام شد:', err);
+    // در ورسل ارور نوشتن روی دیسک عادی است چون دیسک فقط خواندنی است
   }
 }
 
 export async function GET() {
-  return NextResponse.json(getDb());
+  const db = await getDb();
+  return NextResponse.json(db);
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const db = getDb();
+    const db = await getDb();
 
     if (body.action === 'cancel_booking_by_customer') {
       const code = body.code?.trim().toUpperCase();
@@ -177,7 +180,7 @@ export async function POST(req: Request) {
       const opPhone = op?.phone || db.salon_info?.phone || 'شماره تماس سالن';
 
       db.bookings.splice(bookingIndex, 1);
-      saveDb(db);
+      await saveDb(db);
 
       return NextResponse.json({
         success: true,
@@ -201,7 +204,7 @@ export async function POST(req: Request) {
         arrival_rule: body.arrival_rule?.trim() || '',
         cancellation_rule: body.cancellation_rule?.trim() || ''
       };
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, salon_info: db.salon_info });
     }
 
@@ -211,7 +214,7 @@ export async function POST(req: Request) {
       if (!op) return NextResponse.json({ error: 'آرایشگر یافت نشد.' }, { status: 404 });
 
       op.merchant_id = body.merchant_id?.trim() || '';
-      saveDb(db);
+      await saveDb(db);
       const isConnected = op.merchant_id.length >= 30;
       return NextResponse.json({ success: true, is_connected: isConnected, merchant_id: op.merchant_id });
     }
@@ -230,7 +233,7 @@ export async function POST(req: Request) {
 
       if (merchantId && merchantId.length >= 30) {
         try {
-          const finalCallback = callback_url || `http://localhost:3000/api/payment/callback?booking_id=${bookingId}`;
+          const finalCallback = callback_url || `https://alef-barber.vercel.app/api/payment/callback?booking_id=${bookingId}`;
           const zarinpalRes = await fetch('https://payment.zarinpal.com/pg/v4/payment/request.json', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -266,7 +269,7 @@ export async function POST(req: Request) {
             };
             db.bookings = db.bookings || [];
             db.bookings.unshift(pendingBooking);
-            saveDb(db);
+            await saveDb(db);
 
             return NextResponse.json({
               success: true,
@@ -304,7 +307,7 @@ export async function POST(req: Request) {
       };
 
       db.operators.push(newOp);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, operator: newOp });
     }
 
@@ -317,13 +320,13 @@ export async function POST(req: Request) {
       db.services = (db.services || []).filter((s: any) => s.operator_id !== opId);
       db.portfolios = (db.portfolios || []).filter((p: any) => p.operator_id !== opId);
       db.intervals = (db.intervals || []).filter((i: any) => i.operator_id !== opId);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
     if (body.action === 'reset_all_bookings') {
       db.bookings = [];
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
@@ -337,7 +340,7 @@ export async function POST(req: Request) {
       } else {
         db.off_days.push({ operator_id: opId, date });
       }
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, is_off: !exists });
     }
 
@@ -350,13 +353,13 @@ export async function POST(req: Request) {
       };
       db.portfolios = db.portfolios || [];
       db.portfolios.unshift(newPortfolio);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, portfolio: newPortfolio });
     }
 
     if (body.action === 'delete_portfolio') {
       db.portfolios = (db.portfolios || []).filter((p: any) => p.id !== body.portfolio_id);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
@@ -370,13 +373,13 @@ export async function POST(req: Request) {
       };
       db.services = db.services || [];
       db.services.push(newService);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, service: newService });
     }
 
     if (body.action === 'delete_service') {
       db.services = (db.services || []).filter((s: any) => s.operator_id !== body.service_id);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
@@ -387,13 +390,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'رمز عبور فعلی اشتباه است.' }, { status: 400 });
       }
       op.password = body.new_password?.trim();
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
     if (body.action === 'set_theme') {
       db.current_theme = body.theme;
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, theme: db.current_theme });
     }
 
@@ -407,13 +410,13 @@ export async function POST(req: Request) {
       };
       db.intervals = db.intervals || [];
       db.intervals.push(newInterval);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true, interval: newInterval });
     }
 
     if (body.action === 'delete_interval') {
       db.intervals = (db.intervals || []).filter((it: any) => it.id !== body.interval_id);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
@@ -427,19 +430,19 @@ export async function POST(req: Request) {
         value: Number(body.value),
         active: true
       });
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
     if (body.action === 'delete_discount') {
       db.discounts = (db.discounts || []).filter((d: any) => d.code !== body.code);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
     if (body.action === 'cancel_booking') {
       db.bookings = (db.bookings || []).filter((b: any) => b.id !== body.booking_id);
-      saveDb(db);
+      await saveDb(db);
       return NextResponse.json({ success: true });
     }
 
@@ -471,7 +474,7 @@ export async function POST(req: Request) {
 
       db.bookings = db.bookings || [];
       db.bookings.unshift(newBooking);
-      saveDb(db);
+      await saveDb(db);
 
       return NextResponse.json({ success: true, booking: newBooking });
     }
