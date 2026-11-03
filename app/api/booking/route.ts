@@ -1,12 +1,29 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import Redis from 'ioredis';
 
 const dbPath = path.join(process.cwd(), 'data.json');
 
-// متغیرهای ابری ورسل
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// شناسایی متغیر دیتابیس ورسل
+const redisUrl = process.env.STORAGE_URL || process.env.REDIS_URL || process.env.KV_URL;
+let redisClient: Redis | null = null;
+
+function getRedis(): Redis | null {
+  if (!redisClient && redisUrl) {
+    try {
+      redisClient = new Redis(redisUrl, {
+        maxRetriesPerRequest: 2,
+        connectTimeout: 5000,
+        lazyConnect: false,
+      });
+      redisClient.on('error', (err) => console.error('خطای ارتباط با دیتابیس ابری:', err));
+    } catch (e) {
+      console.error('عدم موفقیت در ساخت کلاینت ردیس:', e);
+    }
+  }
+  return redisClient;
+}
 
 function timeToMins(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -86,73 +103,74 @@ const defaultData = {
 
 let memoryDb: any = null;
 
-// خواندن اطلاعات (اول از فضای ابری ورسل، در غیر این صورت فایل لوکال)
 async function getDb() {
-  if (KV_URL && KV_TOKEN) {
+  const client = getRedis();
+  if (client) {
     try {
-      const res = await fetch(`${KV_URL}/get/alef_db`, {
-        headers: { Authorization: `Bearer ${KV_TOKEN}` },
-        cache: 'no-store'
-      });
-      const data = await res.json();
-      if (data && data.result) {
-        const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-        memoryDb = parsed;
+      const cached = await client.get('alef_barber_db');
+      if (cached) {
+        memoryDb = JSON.parse(cached);
         return memoryDb;
       }
     } catch (err) {
-      console.error('خطا در خواندن از دیتابیس ابری:', err);
+      console.error('خطا در خواندن از ردیس:', err);
     }
   }
 
   if (memoryDb) return memoryDb;
 
   try {
-    if (!fs.existsSync(dbPath)) {
-      fs.writeFileSync(dbPath, JSON.stringify(defaultData, null, 2), 'utf8');
+    if (fs.existsSync(dbPath)) {
+      const content = fs.readFileSync(dbPath, 'utf8');
+      memoryDb = JSON.parse(content);
+    } else {
       memoryDb = defaultData;
-      return memoryDb;
     }
-    const content = fs.readFileSync(dbPath, 'utf8');
-    const parsed = JSON.parse(content);
-    memoryDb = parsed;
-    return memoryDb;
   } catch {
     memoryDb = defaultData;
-    return memoryDb;
   }
+
+  // ثبت اولیه در دیتابیس ابری
+  if (client && memoryDb) {
+    try {
+      await client.set('alef_barber_db', JSON.stringify(memoryDb));
+    } catch (e) {
+      console.error('خطا در مقداردهی ردیس:', e);
+    }
+  }
+
+  return memoryDb;
 }
 
-// ذخیره دائمی اطلاعات (در فضای ابری ورسل و لوکال)
 async function saveDb(data: any) {
   memoryDb = data;
+  const client = getRedis();
 
-  if (KV_URL && KV_TOKEN) {
+  if (client) {
     try {
-      await fetch(`${KV_URL}/set/alef_db`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${KV_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data),
-        cache: 'no-store'
-      });
+      await client.set('alef_barber_db', JSON.stringify(data));
+      return;
     } catch (err) {
-      console.error('خطا در ذخیره در دیتابیس ابری:', err);
+      console.error('خطا در نوشتن در دیتابیس ابری ردیس:', err);
     }
   }
 
   try {
     fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    // در ورسل ارور نوشتن روی دیسک عادی است چون دیسک فقط خواندنی است
+    // در سیستم فایل فقط‌خواندنی ورسل نادیده گرفته می‌شود
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const db = await getDb();
-  return NextResponse.json(db);
+  return NextResponse.json(db, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    }
+  });
 }
 
 export async function POST(req: Request) {
@@ -316,7 +334,7 @@ export async function POST(req: Request) {
       if (opId === 99) {
         return NextResponse.json({ error: 'حذف اکانت اصلی برنامه‌نویس امکان‌پذیر نیست.' }, { status: 403 });
       }
-      db.operators = db.operators.filter((o: any) => o.id !== opId);
+      db.operators = (db.operators || []).filter((o: any) => o.id !== opId);
       db.services = (db.services || []).filter((s: any) => s.operator_id !== opId);
       db.portfolios = (db.portfolios || []).filter((p: any) => p.operator_id !== opId);
       db.intervals = (db.intervals || []).filter((i: any) => i.operator_id !== opId);
@@ -378,7 +396,7 @@ export async function POST(req: Request) {
     }
 
     if (body.action === 'delete_service') {
-      db.services = (db.services || []).filter((s: any) => s.operator_id !== body.service_id);
+      db.services = (db.services || []).filter((s: any) => s.id !== body.service_id);
       await saveDb(db);
       return NextResponse.json({ success: true });
     }
