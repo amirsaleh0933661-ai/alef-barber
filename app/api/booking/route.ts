@@ -153,6 +153,7 @@ async function saveDb(data: any) {
 
 export async function GET(req: Request) {
   const db = await getDb();
+  // فقط نوبت‌هایی که پرداخت شده‌اند (PAID) به کلاینت و آرایشگر ارسال می‌شوند
   const filteredDb = {
     ...db,
     bookings: (db.bookings || []).filter((b: any) => b.payment_status === 'PAID')
@@ -251,7 +252,7 @@ export async function POST(req: Request) {
 
       const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
       const host = req.headers.get('host') || 'alef-barber.vercel.app';
-      const protocol = 'https'; // اجبار اکید به https برای جلوگیری از خطای تیکارت
+      const protocol = 'https'; // اجبار به https
       const baseUrl = `${protocol}://${host}`;
 
       try {
@@ -268,7 +269,7 @@ export async function POST(req: Request) {
             external_order_id: booking_id,
             buyer_ref: customer_phone,
             return_url: `${baseUrl}/?payment_status=success&booking_id=${booking_id}`,
-            callback_url: `${baseUrl}/api/payment`, // اصلاح کامل آدرس با https
+            callback_url: `${baseUrl}/api/payment`,
             expires_minutes: 5 // مهلت پرداخت دقیقاً ۵ دقیقه
           })
         });
@@ -296,8 +297,9 @@ export async function POST(req: Request) {
       }
     }
 
+    // تایید دستی فاکتور در دیتابیس سایت
     if (body.action === 'confirm_paid_booking') {
-      const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id);
+      const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id || b.ref_id === body.tracking_code);
       if (booking) {
         booking.payment_status = 'PAID';
         await saveDb(db);
