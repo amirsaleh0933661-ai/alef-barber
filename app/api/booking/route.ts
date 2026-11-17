@@ -130,14 +130,6 @@ async function getDb() {
     memoryDb = defaultData;
   }
 
-  if (client && memoryDb) {
-    try {
-      await client.set('alef_barber_db', JSON.stringify(memoryDb));
-    } catch (e) {
-      console.error('خطا در مقداردهی ردیس:', e);
-    }
-  }
-
   return memoryDb;
 }
 
@@ -161,7 +153,12 @@ async function saveDb(data: any) {
 
 export async function GET(req: Request) {
   const db = await getDb();
-  return NextResponse.json(db, {
+  // فقط نوبت‌هایی که پرداخت شده‌اند (PAID) به کلاینت و آرایشگر ارسال می‌شوند
+  const filteredDb = {
+    ...db,
+    bookings: (db.bookings || []).filter((b: any) => b.payment_status === 'PAID')
+  };
+  return NextResponse.json(filteredDb, {
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
@@ -206,37 +203,35 @@ export async function POST(req: Request) {
       });
     }
 
-    if (body.action === 'update_salon_info') {
-      db.salon_info = {
-        name: body.name?.trim() || 'سالن پیرایش الف',
-        phone: body.phone?.trim() || '',
-        address: body.address?.trim() || '',
-        instagram: body.instagram?.trim() || '',
-        map_url: body.map_url?.trim() || '',
-        welcome_title: body.welcome_title?.trim() || 'به سالن پیرایش الف خوش آمدید',
-        welcome_text: body.welcome_text?.trim() || '',
-        install_prompt_text: body.install_prompt_text?.trim() || '',
-        arrival_rule: body.arrival_rule?.trim() || '',
-        cancellation_rule: body.cancellation_rule?.trim() || '',
-        tcart_api_key: body.tcart_api_key?.trim() || db.salon_info?.tcart_api_key || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
-      };
-      await saveDb(db);
-      return NextResponse.json({ success: true, salon_info: db.salon_info });
-    }
-
-    if (body.action === 'request_card_payment' || body.action === 'request_gateway_payment') {
-      const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount } = body;
+    if (body.action === 'request_card_payment') {
+      const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount, booking_id } = body;
       const opId = Number(operator_id) || 1;
       const op = db.operators.find((o: any) => o.id === opId);
       const barberName = op?.name || 'آرایشگر';
 
-      const bookingId = 'bk_' + Date.now();
       const reqStartMins = timeToMins(start_time);
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      const pendingBooking = {
-        id: bookingId,
+      // ثبت اولیه با وضعیت PENDING_PAYMENT و فیلد ref_id اختیاری برای جلوگیری از خطای TypeScript
+      const pendingBooking: {
+        id: any;
+        operator_id: number;
+        operator_name: any;
+        date: any;
+        start_time: any;
+        end_time: string;
+        duration: number;
+        customer_name: any;
+        customer_phone: any;
+        services: any;
+        discount_applied: any;
+        amount: number;
+        payment_status: string;
+        created_at: string;
+        ref_id?: string;
+      } = {
+        id: booking_id,
         operator_id: opId,
         operator_name: barberName,
         date,
@@ -248,7 +243,7 @@ export async function POST(req: Request) {
         services: services || [],
         discount_applied: discount_code || null,
         amount: Number(amount),
-        payment_status: 'PENDING_PAYMENT', // تا پرداخت نشود، در لیست آرایشگر نمایش داده نمی‌شود
+        payment_status: 'PENDING_PAYMENT',
         created_at: new Date().toISOString()
       };
 
@@ -259,7 +254,6 @@ export async function POST(req: Request) {
       const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
       const host = req.headers.get('host') || 'localhost:3000';
       const protocol = host.includes('localhost') ? 'http' : 'https';
-      const dynamicCallbackUrl = `${protocol}://${host}/api/payment`;
 
       try {
         const tcartRes = await fetch('https://tcartt.com/api/v1/invoices', {
@@ -272,204 +266,45 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             amount_toman: Number(amount),
             title: `رزرو نوبت سالن الف - ${barberName}`,
-            external_order_id: bookingId,
+            external_order_id: booking_id,
             buyer_ref: customer_phone,
-            return_url: `${protocol}://${host}/?payment_status=success&booking_id=${bookingId}`,
-            callback_url: dynamicCallbackUrl,
-            expires_minutes: 5 // تنظیم مهلت پرداخت روی دقیقاً ۵ دقیقه
+            return_url: `${protocol}/?payment_status=success&booking_id=${booking_id}`,
+            callback_url: `${protocol}/api/payment`,
+            expires_minutes: 5 // مهلت پرداخت دقیقاً ۵ دقیقه
           })
         });
 
-        const rawText = await tcartRes.text();
-        let tcartData;
-        try {
-          tcartData = JSON.parse(rawText);
-        } catch (e) {
-          return NextResponse.json({
-            success: false,
-            error: 'پاسخ نامعتبر از سرور تیکارت'
-          });
-        }
+        const tcartData = await tcartRes.json();
 
-        if (tcartRes.ok && tcartData && tcartData.payment_url) {
+        if (tcartRes.ok && tcartData) {
+          pendingBooking.ref_id = tcartData.tracking_code;
+          await saveDb(db);
+
           return NextResponse.json({
             success: true,
-            is_real_gateway: true,
-            payment_url: tcartData.payment_url,
-            booking_id: bookingId
+            invoice_id: tcartData.invoice_id,
+            tracking_code: tcartData.tracking_code,
+            unique_amount_toman: tcartData.unique_amount_toman,
+            card_number: tcartData.card_number_formatted,
+            card_holder: tcartData.card_holder,
+            bank_name: tcartData.bank_name
           });
         } else {
-          return NextResponse.json({
-            success: false,
-            error: tcartData.error || tcartData.message || 'خطا در صدور فاکتور در تیکارت'
-          });
+          return NextResponse.json({ success: false, error: tcartData.error || 'خطا در صدور فاکتور در تیکارت' });
         }
       } catch (err: any) {
-        return NextResponse.json({
-          success: false,
-          error: 'خطای شبکه در اتصال به تیکارت: ' + err.message
-        });
+        return NextResponse.json({ success: false, error: 'خطای شبکه در اتصال به تیکارت: ' + err.message });
       }
     }
 
     if (body.action === 'confirm_paid_booking') {
       const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id);
       if (booking) {
-        booking.payment_status = 'PAID'; // تغییر وضعیت به پرداخت شده تا در پنل آرایشگر ظاهر شود
-        booking.ref_id = body.transaction_ref || ('TCART-' + Math.floor(10000000 + Math.random() * 90000000));
+        booking.payment_status = 'PAID';
         await saveDb(db);
         return NextResponse.json({ success: true, booking });
       }
       return NextResponse.json({ error: 'سفارش یافت نشد' }, { status: 404 });
-    }
-
-    if (body.action === 'add_operator') {
-      const { name, username, password, phone } = body;
-      const cleanUser = username.trim().toLowerCase();
-      if (db.operators.some((o: any) => o.username.toLowerCase() === cleanUser)) {
-        return NextResponse.json({ error: 'این نام کاربری قبلاً ثبت شده است.' }, { status: 400 });
-      }
-      const newOp = {
-        id: Date.now(),
-        name: name.trim(),
-        username: cleanUser,
-        password: password.trim(),
-        phone: phone?.trim() || '',
-        role: 'barber'
-      };
-      db.operators.push(newOp);
-      await saveDb(db);
-      return NextResponse.json({ success: true, operator: newOp });
-    }
-
-    if (body.action === 'delete_operator') {
-      const opId = Number(body.operator_id);
-      if (opId === 99) return NextResponse.json({ error: 'امکان حذف مدیر کل نیست.' }, { status: 403 });
-      db.operators = (db.operators || []).filter((o: any) => o.id !== opId);
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'reset_all_bookings') {
-      db.bookings = [];
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'toggle_off_day') {
-      const opId = Number(body.operator_id);
-      const date = body.date;
-      db.off_days = db.off_days || [];
-      const exists = db.off_days.some((o: any) => o.operator_id === opId && o.date === date);
-      if (exists) {
-        db.off_days = db.off_days.filter((o: any) => !(o.operator_id === opId && o.date === date));
-      } else {
-        db.off_days.push({ operator_id: opId, date });
-      }
-      await saveDb(db);
-      return NextResponse.json({ success: true, is_off: !exists });
-    }
-
-    if (body.action === 'add_portfolio') {
-      const newPortfolio = {
-        id: 'port_' + Date.now(),
-        operator_id: Number(body.operator_id) || 1,
-        title: body.title?.trim() || 'نمونه‌کار',
-        image: body.image
-      };
-      db.portfolios = db.portfolios || [];
-      db.portfolios.unshift(newPortfolio);
-      await saveDb(db);
-      return NextResponse.json({ success: true, portfolio: newPortfolio });
-    }
-
-    if (body.action === 'delete_portfolio') {
-      db.portfolios = (db.portfolios || []).filter((p: any) => p.id !== body.portfolio_id);
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'add_service') {
-      const newService = {
-        id: 'srv_' + Date.now(),
-        operator_id: Number(body.operator_id) || 1,
-        title: body.title.trim(),
-        duration: Number(body.duration) || 30,
-        price: Number(body.price) || 100000
-      };
-      db.services = db.services || [];
-      db.services.push(newService);
-      await saveDb(db);
-      return NextResponse.json({ success: true, service: newService });
-    }
-
-    if (body.action === 'delete_service') {
-      db.services = (db.services || []).filter((s: any) => s.id !== body.service_id);
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'change_password') {
-      const op = db.operators.find((o: any) => o.id === Number(body.operator_id));
-      if (!op) return NextResponse.json({ error: 'کاربر یافت نشد.' }, { status: 404 });
-      if (body.old_password && op.password !== body.old_password?.trim()) {
-        return NextResponse.json({ error: 'رمز عبور فعلی اشتباه است.' }, { status: 400 });
-      }
-      op.password = body.new_password?.trim();
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'set_theme') {
-      db.current_theme = body.theme;
-      await saveDb(db);
-      return NextResponse.json({ success: true, theme: db.current_theme });
-    }
-
-    if (body.action === 'add_interval') {
-      const newInterval = {
-        id: 'int_' + Date.now(),
-        operator_id: Number(body.operator_id) || 1,
-        date: body.date,
-        start_time: body.start_time,
-        end_time: body.end_time
-      };
-      db.intervals = db.intervals || [];
-      db.intervals.push(newInterval);
-      await saveDb(db);
-      return NextResponse.json({ success: true, interval: newInterval });
-    }
-
-    if (body.action === 'delete_interval') {
-      db.intervals = (db.intervals || []).filter((it: any) => it.id !== body.interval_id);
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'add_discount') {
-      const code = body.code.trim().toUpperCase();
-      const discType = body.type === 'fixed' ? 'fixed' : 'percent';
-      db.discounts = (db.discounts || []).filter((d: any) => d.code !== code);
-      db.discounts.push({
-        code,
-        type: discType,
-        value: Number(body.value),
-        active: true
-      });
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'delete_discount') {
-      db.discounts = (db.discounts || []).filter((d: any) => d.code !== body.code);
-      await saveDb(db);
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'cancel_booking') {
-      db.bookings = (db.bookings || []).filter((b: any) => b.id !== body.booking_id);
-      await saveDb(db);
-      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: 'عملیات نامعتبر' }, { status: 400 });

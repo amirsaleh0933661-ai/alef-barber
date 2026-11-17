@@ -120,6 +120,9 @@ export default function BookingPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // اطلاعات صفحه پرداخت اختصاصی تیکارت
+  const [customInvoice, setCustomInvoice] = useState<any | null>(null);
   const [receipt, setReceipt] = useState<any | null>(null);
   const [copiedNote, setCopiedNote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -180,27 +183,6 @@ export default function BookingPage() {
     setCurrentTotalMins(n.getHours() * 60 + n.getMinutes());
 
     loadData();
-
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const paymentStatus = params.get('payment_status');
-      const refId = params.get('ref_id');
-      const bookingId = params.get('booking_id');
-
-      if (paymentStatus === 'success' && refId) {
-        fetch('/api/booking')
-          .then(r => r.json())
-          .then(freshDb => {
-            const booked = (freshDb.bookings || []).find((b: any) => b.id === bookingId || b.ref_id === refId);
-            if (booked) {
-              setReceipt(booked);
-            }
-          });
-        showToast('پرداخت و ثبت نوبت با موفقیت انجام شد ✓');
-      } else if (paymentStatus === 'canceled') {
-        showToast('پرداخت کارت‌به‌کارت لغو گردید.');
-      }
-    }
 
     const userAgent = window.navigator.userAgent.toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(userAgent));
@@ -354,6 +336,7 @@ export default function BookingPage() {
     }
   };
 
+  // درخواست ساخت فاکتور و دریافت مشخصات کارت‌به‌کارت اختصاصی برای نمایش در صفحه سایت
   const handleProceedPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSelectedDateOff) {
@@ -382,6 +365,7 @@ export default function BookingPage() {
 
     setIsSubmitting(true);
     const chosenServiceTitles = activeServiceObjects.map((s: any) => s.title);
+    const bookingId = 'bk_' + Date.now();
 
     try {
       const res = await fetch('/api/booking', {
@@ -398,21 +382,19 @@ export default function BookingPage() {
           services: chosenServiceTitles,
           discount_code: appliedDiscount?.code || null,
           amount: finalPrice,
-          callback_url: `${window.location.origin}/api/payment`
+          booking_id: bookingId
         })
       });
 
       const result = await res.json();
       setIsSubmitting(false);
 
-      // بررسی اینکه آیا تیکارت لینک پرداخت فرستاده است یا خیر
-      if (result.success && result.is_real_gateway && result.payment_url) {
-        showToast('در حال انتقال به درگاه پرداخت تیکارت...');
-        window.location.href = result.payment_url; // هدایت کاربر به صفحه تیکارت
-      } else if (result.success && result.booking_id) {
-        showToast('شناسه سفارش ایجاد شد، اما لینک درگاه دریافت نشد. کلید API یا اشتراک تیکارت را بررسی کنید.');
+      if (result.success && result.card_number) {
+        // نمایش صفحه پرداخت اختصاصی داخل خود سایت با اطلاعات تیکارت
+        setCustomInvoice(result);
+        showToast('فاکتور کارت‌به‌کارت با موفقیت ایجاد شد.');
       } else {
-        showToast(result.error || 'خطا در اتصال به درگاه تیکارت');
+        showToast(result.error || 'خطا در صدور فاکتور تیکارت');
       }
     } catch {
       setIsSubmitting(false);
@@ -488,7 +470,7 @@ export default function BookingPage() {
     <main className={`min-h-screen ${c.bg} ${c.text} py-10 px-4 font-sans relative overflow-hidden flex flex-col items-center justify-start transition-colors duration-300`} dir="rtl">
       
       {toast && (
-        <div className="fixed top-4 left-4 right-4 max-w-md mx-auto z-50 p-3.5 bg-rose-600 text-white rounded-2xl shadow-xl flex items-center justify-between text-xs font-bold border border-rose-400">
+        <div className="fixed top-4 left-4 right-4 max-w-md mx-auto z-50 p-3.5 bg-slate-900 text-white rounded-2xl shadow-xl flex items-center justify-between text-xs font-bold border border-slate-700">
           <span>{toast}</span>
           <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg">
             <X className="w-4 h-4" />
@@ -496,14 +478,82 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* ۱. پنجره شیشه‌ای مستقل رسید ثبت نوبت موفقیت‌آمیز */}
+      {/* ۱. صفحه پرداخت اختصاصی تیکارت (داخل خود سایت با مبلغ یکتا و شماره کارت) */}
+      {customInvoice && (
+        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-700 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 relative">
+            
+            <button
+              onClick={() => setCustomInvoice(null)}
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/10 transition z-10"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="text-center space-y-1 border-b border-slate-800 pb-4">
+              <span className="text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full font-bold">
+                پرداخت کارت‌به‌کارت تیکارت (مهلت ۵ دقیقه)
+              </span>
+              <h3 className="text-sm font-black text-white mt-2">کد پیگیری سفارش: <span className="font-mono text-amber-400">{customInvoice.tracking_code}</span></h3>
+            </div>
+
+            {/* مبلغ دقیق و یکتا */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center space-y-2">
+              <p className="text-xs text-slate-400">مبلغ دقیق را واریز کنید:</p>
+              <div className="text-2xl font-black text-amber-400 font-mono tracking-wider">
+                {customInvoice.unique_amount_toman?.toLocaleString('fa-IR')} <span className="text-xs font-normal">تومان</span>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(String(customInvoice.unique_amount_toman));
+                  showToast('مبلغ دقیق کپی شد ✓');
+                }}
+                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl transition flex items-center justify-center gap-1.5 mx-auto font-bold"
+              >
+                <Copy className="w-3.5 h-3.5 text-amber-400" /> کپی مبلغ دقیق
+              </button>
+            </div>
+
+            {/* مشخصات کارت مقصد */}
+            <div className="bg-gradient-to-br from-blue-950 to-slate-900 p-4 rounded-2xl border border-blue-800/40 space-y-3">
+              <p className="text-xs text-blue-300">به این کارت واریز کنید ({customInvoice.bank_name}):</p>
+              <div className="font-mono text-lg font-black tracking-widest text-white text-center py-1">
+                {customInvoice.card_number}
+              </div>
+              <p className="text-xs text-slate-400 text-center">به نام: <span className="text-slate-200 font-bold">{customInvoice.card_holder}</span></p>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(customInvoice.card_number);
+                  showToast('شماره کارت کپی شد ✓');
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <Copy className="w-3.5 h-3.5" /> کپی شماره کارت
+              </button>
+            </div>
+
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-[11px] text-emerald-300 text-center leading-relaxed">
+              ⏳ همین‌جا منتظر بمانید؛ پس از واریز وجه، سیستم به صورت خودکار پرداخت شما را شناسایی و تایید می‌کند.
+            </div>
+
+            <button
+              onClick={() => setCustomInvoice(null)}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+            >
+              بازگشت به سایت
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ۲. رسید ثبت نوبت موفقیت‌آمیز */}
       {receipt && (
         <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900/60 dark:bg-black/60 backdrop-blur-3xl border border-emerald-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(16,185,129,0.25)] space-y-4 relative overflow-hidden text-center">
+          <div className="max-w-md w-full bg-slate-900 border border-emerald-500/40 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative text-center">
             
             <button
               onClick={() => { setReceipt(null); setSelectedStartTime(null); }}
-              className="absolute top-4 left-4 p-2 text-slate-300 hover:text-white rounded-xl bg-white/10 hover:bg-white/20 transition z-10"
+              className="absolute top-4 left-4 p-2 text-slate-300 hover:text-white rounded-xl bg-white/10 transition z-10"
             >
               <X className="w-4 h-4" />
             </button>
@@ -515,7 +565,7 @@ export default function BookingPage() {
                 {getFirstName(receipt.customer_name)} عزیز، نوبت شما با موفقیت ثبت شد! 🎉
               </h3>
               <p className="text-[11px] text-emerald-300 mt-1 font-bold">
-                مشخصات رزرو در سالن پیرایش الف به شرح زیر است:
+                مشخصات رزرو در سالن پیرایش الف:
               </p>
             </div>
             
@@ -537,27 +587,15 @@ export default function BookingPage() {
                 <span className="font-mono text-emerald-400 font-black text-sm">از {receipt.start_time} تا حدود {receipt.end_time}</span>
               </div>
               <div className="flex justify-between">
-                <span className={c.muted}>مبلغ تسویه شده:</span>
-                <span className="font-mono text-emerald-400 font-bold">{Number(receipt.amount).toLocaleString('fa-IR')} تومان</span>
-              </div>
-              <div className="flex justify-between">
                 <span className={c.muted}>کد پیگیری تراکنش:</span>
                 <span className="font-mono text-amber-400 font-bold tracking-wider">{receipt.ref_id}</span>
               </div>
             </div>
 
-            <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-[11px] text-amber-200 text-right space-y-2 leading-relaxed">
-              <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
-                <Info className="w-4 h-4 shrink-0" /> نکات بسیار مهم سالن الف:
-              </div>
-              <p>• {db.salon_info?.arrival_rule || 'زمان نوبت تقریبی است؛ لطفاً ۵ الی ۱۰ دقیقه قبل در سالن حضور داشته باشید.'}</p>
-              <p>• {db.salon_info?.cancellation_rule || 'در صورت نیاز به کنسلی یا جابجایی، لطفاً حداقل ۳ ساعت قبل هماهنگ فرمایید تا حق نوبت سایر مراجعین محفوظ بماند.'}</p>
-            </div>
-
             <div className="flex gap-2 pt-1">
               <button
                 onClick={copyAppointmentText}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95"
+                className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
               >
                 <Copy className="w-3.5 h-3.5 text-blue-400" />
                 {copiedNote ? 'کپی شد ✓' : 'کپی مشخصات'}
@@ -566,10 +604,9 @@ export default function BookingPage() {
                 href={`https://wa.me/?text=${encodeURIComponent(`نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}`)}`}
                 target="_blank"
                 rel="noreferrer"
-                className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95"
+                className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
               >
-                <Share2 className="w-3.5 h-3.5" />
-                واتساپ
+                <Share2 className="w-3.5 h-3.5" /> واتساپ
               </a>
             </div>
 
@@ -583,10 +620,10 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* ۲. پنجره لغو نوبت توسط مشتری با کد سفارش */}
+      {/* ۳. پنجره لغو نوبت توسط مشتری با کد سفارش */}
       {showCancelModal && (
         <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-rose-500/30 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-4 relative">
+          <div className="max-w-md w-full bg-slate-900 border border-rose-500/30 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative">
             <button
               onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }}
               className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
@@ -613,20 +650,11 @@ export default function BookingPage() {
                   <input
                     type="text"
                     required
-                    placeholder="مثال: TCART-12345678"
+                    placeholder="مثال: TCO-1234"
                     value={cancelRefInput}
                     onChange={(e) => setCancelRefInput(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 text-white text-xs p-3 rounded-xl font-mono text-center uppercase tracking-widest focus:outline-none"
                   />
-                </div>
-
-                <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-[11px] text-rose-300 leading-relaxed space-y-1">
-                  <p className="font-bold text-rose-400 flex items-center gap-1">
-                    <AlertCircle className="w-4 h-4 shrink-0" /> اخطار مهم:
-                  </p>
-                  <p>
-                    این عملیات <strong>کاملاً غیرقابل بازگشت</strong> است. به محض لغو، نوبت حذف شده و ساعت شما بلافاصله در سیستم برای رزرو سایر مشتریان آزاد خواهد شد.
-                  </p>
                 </div>
 
                 <div className="flex gap-2 pt-1">
@@ -640,7 +668,7 @@ export default function BookingPage() {
                   <button
                     type="submit"
                     disabled={isCanceling}
-                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-1.5 active:scale-95"
+                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-1.5"
                   >
                     <Trash2 className="w-4 h-4" />
                     {isCanceling ? 'در حال لغو...' : 'تأیید و لغو نوبت'}
@@ -659,15 +687,15 @@ export default function BookingPage() {
 
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-200 text-right space-y-2 leading-relaxed">
                   <p className="font-bold text-white flex items-center gap-1.5">
-                    <Phone className="w-4 h-4 text-emerald-400 shrink-0" /> هماهنگی عودت وجه پرداختی:
+                    <Phone className="w-4 h-4 text-emerald-400 shrink-0" /> هماهنگی عودت وجه:
                   </p>
                   <p>
-                    برای هماهنگی و عودت یا جابجایی مبلغ، لطفاً مستقیماً با آرایشگر خود (<strong>{cancelSuccessData.operator_name}</strong>) به شماره زیر تماس حاصل فرمایید:
+                    برای هماهنگی عودت وجه، لطفاً با آرایشگر خود (<strong>{cancelSuccessData.operator_name}</strong>) تماس بگیرید:
                   </p>
                   <div className="pt-1 text-center">
                     <a
                       href={`tel:${cancelSuccessData.operator_phone}`}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-black rounded-xl text-xs shadow-md transition active:scale-95"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-mono font-black rounded-xl text-xs shadow-md"
                     >
                       <Phone className="w-3.5 h-3.5" />
                       <span>{cancelSuccessData.operator_phone}</span>
@@ -688,96 +716,8 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* پنجره خوش‌آمدگویی و نصب PWA */}
-      {welcomeStep && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-2xl flex items-center justify-center p-4 transition-all duration-500 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900/40 dark:bg-black/40 backdrop-blur-2xl border border-white/20 dark:border-white/10 text-white rounded-3xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.6)] space-y-6 relative overflow-hidden">
-            <div className="absolute -top-20 -right-20 w-44 h-44 bg-blue-500/25 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-20 -left-20 w-44 h-44 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-
-            <button
-              onClick={closeWelcomeModal}
-              className="absolute top-4 left-4 p-2 text-slate-300 hover:text-white rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md transition z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {welcomeStep === 1 && (
-              <div className="space-y-4 pt-1 text-center relative z-10">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600/80 to-indigo-600/80 backdrop-blur-md border border-white/30 flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-blue-500/20 mx-auto">
-                  الف
-                </div>
-                <div className="space-y-2">
-                  <h2 className="text-base font-black text-white drop-shadow-sm">
-                    {db.salon_info?.welcome_title || 'به سالن پیرایش الف خوش آمدید'}
-                  </h2>
-                  <p className="text-xs text-slate-200/90 leading-relaxed font-normal">
-                    {db.salon_info?.welcome_text || 'سامانه رزرواسیون آنلاین سالن پیرایش الف. نوبت خود را آنلاین رزرو کرده و پرداخت نمایید.'}
-                  </p>
-                </div>
-                <div className="pt-2">
-                  <button
-                    onClick={() => setWelcomeStep(2)}
-                    className="w-full py-3.5 bg-blue-600/90 hover:bg-blue-500 text-white font-black rounded-xl text-xs shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 active:scale-95 border border-white/20"
-                  >
-                    <span>ادامه و رزرو نوبت</span>
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {welcomeStep === 2 && (
-              <div className="space-y-4 pt-1 text-center relative z-10">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 mx-auto">
-                  <Smartphone className="w-7 h-7" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-sm font-black text-white">دسترسی همیشگی و آسان</h3>
-                  <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-400/30 text-emerald-200 text-xs font-bold leading-relaxed">
-                    {db.salon_info?.install_prompt_text || 'اگه نمی‌خوای هرسری دنبال لینک نگردی، برنامه رو نصب کن تا با یک لمس همیشه روی صفحه گوشیت باشه!'}
-                  </div>
-                </div>
-
-                {isIOS && (
-                  <div className="bg-white/5 border border-white/10 p-3 rounded-2xl text-[11px] text-slate-300 text-right space-y-1.5">
-                    <p className="flex items-center gap-1.5 font-bold text-white">
-                      <span>راهنمای نصب روی آیفون:</span>
-                    </p>
-                    <p className="flex items-center gap-1.5">
-                      ۱. دکمه <Share className="w-3.5 h-3.5 text-blue-400" /> Share را در پایین مرورگر بزنید.
-                    </p>
-                    <p className="flex items-center gap-1.5">
-                      ۲. گزینه <PlusSquare className="w-3.5 h-3.5 text-emerald-400" /> Add to Home Screen را لمس کنید.
-                    </p>
-                  </div>
-                )}
-
-                <div className="space-y-2 pt-1">
-                  {!isIOS && (
-                    <button
-                      onClick={triggerPwaInstall}
-                      className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95 border border-white/20"
-                    >
-                      <Download className="w-4 h-4" />
-                      نصب مستقیم برنامه روی گوشی
-                    </button>
-                  )}
-                  <button
-                    onClick={closeWelcomeModal}
-                    className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold rounded-xl transition border border-white/10"
-                  >
-                    ورود مستقیم به بخش نوبت‌دهی
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* فرم اصلی رزرو */}
-      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 sm:p-8 space-y-7 shadow-xl relative z-10 transition-colors duration-300 mb-6`}>
+      {/* فرم اصلی رزرو نوبت */}
+      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 sm:p-8 space-y-7 shadow-xl relative z-10 mb-6`} dir="rtl">
         
         <div className={`space-y-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} pb-5`}>
           <div className="flex justify-between items-center">
@@ -789,10 +729,10 @@ export default function BookingPage() {
               <button
                 type="button"
                 onClick={() => setShowCancelModal(true)}
-                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 transition active:scale-95"
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 transition"
               >
                 <Search className="w-3 h-3" />
-                <span>پیگیری یا لغو نوبت</span>
+                <span>لغو نوبت با کد</span>
               </button>
             </div>
 
@@ -801,7 +741,6 @@ export default function BookingPage() {
               className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold ${
                 isDark ? 'bg-slate-800 border-slate-700 text-amber-400' : 'bg-slate-100 border-slate-300 text-slate-700'
               }`}
-              title="تغییر تم"
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -890,14 +829,6 @@ export default function BookingPage() {
           </div>
         </div>
 
-        {/* بنر زمان تقریبی و حضور */}
-        <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-2.5 text-xs text-amber-500 leading-relaxed">
-          <Info className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <strong>توجه:</strong> {db.salon_info?.arrival_rule || 'مدت زمان نوبت‌ها تقریبی بوده و ممکن است ۱۵ الی ۲۰ دقیقه متغیر باشد. لطفاً ۵ دقیقه قبل در سالن الف حضور داشته باشید.'}
-          </div>
-        </div>
-
         {/* تقویم شمسی */}
         <div className="space-y-2.5">
           <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
@@ -938,31 +869,18 @@ export default function BookingPage() {
 
         {/* ساعت‌های شروع */}
         <div className="space-y-2.5">
-          <div className="flex justify-between items-center">
-            <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
-              <Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت با {currentOp?.name}:
-            </label>
-            {!isSelectedDateOff && (
-              <div className="flex gap-3 text-[11px]">
-                <span className="flex items-center gap-1 text-rose-500 font-bold">
-                  <span className="w-2 h-2 rounded-full bg-rose-500"></span> پر
-                </span>
-                <span className="flex items-center gap-1 text-emerald-500 font-bold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> آزاد
-                </span>
-              </div>
-            )}
-          </div>
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
+            <Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت با {currentOp?.name}:
+          </label>
 
           {isSelectedDateOff ? (
             <div className="py-7 text-center bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold flex flex-col items-center gap-1">
               <Ban className="w-5 h-5 text-rose-400" />
-              <span>{currentOp?.name} در این تاریخ حضور ندارد (روز تعطیل / مرخصی).</span>
-              <span className="text-[11px] text-slate-400 font-normal">لطفاً روز دیگری از تقویم را انتخاب فرمایید.</span>
+              <span>{currentOp?.name} در این تاریخ حضور ندارد (روز تعطیل).</span>
             </div>
           ) : availableStartSlots.length === 0 ? (
             <p className={`py-6 text-center ${c.innerCard} rounded-2xl border ${c.muted} text-xs`}>
-              برای این روز یا ساعات باقیمانده، تایم بازی برای {currentOp?.name} وجود ندارد.
+              تایم بازی برای این روز وجود ندارد.
             </p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
@@ -1009,7 +927,7 @@ export default function BookingPage() {
             <form onSubmit={handleApplyDiscount} className="flex gap-2">
               <input
                 type="text"
-                placeholder="مثال: ALEF20 یا VIP50T"
+                placeholder="مثال: ALEF20"
                 value={discountInput}
                 onChange={(e) => setDiscountInput(e.target.value)}
                 className={`flex-1 ${c.input} border text-xs p-2.5 rounded-xl uppercase font-mono focus:outline-none`}
@@ -1021,19 +939,15 @@ export default function BookingPage() {
                 اعمال
               </button>
             </form>
-
             {discountMsg && (
-              <p className={`text-[11px] font-bold mt-2 flex items-center gap-1 ${
-                discountMsg.type === 'ok' ? 'text-emerald-500' : 'text-rose-500'
-              }`}>
-                {discountMsg.type === 'ok' ? <Check className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+              <p className={`text-[11px] font-bold mt-1 ${discountMsg.type === 'ok' ? 'text-emerald-500' : 'text-rose-500'}`}>
                 {discountMsg.text}
               </p>
             )}
           </div>
         )}
 
-        {/* مشخصات مراجع با اعتبارسنجی ارقام شماره تماس */}
+        {/* مشخصات مراجع و دکمه پرداخت */}
         {selectedStartTime && !receipt && !isSelectedDateOff && (
           <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-2xl space-y-4`}>
             <h3 className={`text-xs font-black ${c.text}`}>مشخصات مراجع:</h3>
@@ -1051,9 +965,7 @@ export default function BookingPage() {
               </div>
 
               <div>
-                <label className="text-[11px] text-slate-300 font-bold block mb-1">
-                  شماره موبایل همراه (۱۱ رقم):
-                </label>
+                <label className="text-[11px] text-slate-300 font-bold block mb-1">شماره موبایل (۱۱ رقم):</label>
                 <input
                   type="tel"
                   required
@@ -1067,9 +979,6 @@ export default function BookingPage() {
                   }}
                   className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono text-center tracking-widest focus:outline-none`}
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  پیامک تایید و یادآوری نوبت به این شماره ارسال خواهد شد.
-                </span>
               </div>
             </div>
 
@@ -1077,10 +986,6 @@ export default function BookingPage() {
               <div className="flex justify-between">
                 <span className={c.muted}>آرایشگر:</span>
                 <span className="font-bold text-blue-500">{currentOp?.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>مدت زمان خدمات:</span>
-                <span className="text-emerald-500 font-mono">حدود {formatDuration(totalDuration)}</span>
               </div>
               <div className="flex justify-between">
                 <span className={c.muted}>مجموع خدمات:</span>
@@ -1093,7 +998,7 @@ export default function BookingPage() {
                 </div>
               )}
               <div className={`flex justify-between font-black text-sm pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-                <span>مبلغ نهایی پرداخت:</span>
+                <span>مبلغ نهایی:</span>
                 <span className="text-emerald-500 font-mono text-base">{finalPrice.toLocaleString('fa-IR')} تومان</span>
               </div>
             </div>
@@ -1101,113 +1006,13 @@ export default function BookingPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2 active:scale-95"
+              className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2"
             >
               <CreditCard className="w-4 h-4" />
-              {isSubmitting ? 'در حال اتصال به تیکارت...' : `پرداخت کارت‌به‌کارت تیکارت (${finalPrice.toLocaleString('fa-IR')} تومان)`}
+              {isSubmitting ? 'در حال صدور فاکتور تیکارت...' : `پرداخت کارت‌به‌کارت (${finalPrice.toLocaleString('fa-IR')} تومان)`}
             </button>
           </form>
         )}
-
-      </div>
-
-      {/* بخش نمونه‌کارها */}
-      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 space-y-4 shadow-xl mb-6`}>
-        <div className="flex items-center justify-between border-b pb-3 border-slate-700/40">
-          <div className="flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-purple-500" />
-            <h2 className="text-sm font-black">نمونه‌کارهای {currentOp?.name}:</h2>
-          </div>
-          <span className="text-[11px] text-slate-400 font-mono">{currentOpPortfolios.length} اثر</span>
-        </div>
-
-        {currentOpPortfolios.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-6">هنوز تصویری برای این آرایشگر ثبت نشده است.</p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {currentOpPortfolios.map((port: any) => (
-              <div key={port.id} className="rounded-2xl overflow-hidden border border-slate-700/60 bg-black/40 shadow group">
-                <div className="w-full h-32 overflow-hidden bg-slate-800">
-                  <img 
-                    src={port.image} 
-                    alt={port.title} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
-                  />
-                </div>
-                <p className="text-[11px] font-bold p-2 text-center truncate text-slate-200">{port.title}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* بخش کارت شیشه‌ای و دکمه‌های ارتباطی */}
-      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 space-y-5 shadow-xl`}>
-        <div className="space-y-1 text-center border-b pb-3 border-slate-700/40">
-          <h3 className="text-sm font-black text-slate-100">نشانی و ارتباط با {db.salon_info?.name || 'سالن پیرایش الف'}</h3>
-          <p className="text-[11px] text-slate-400">اطلاعات حضوری و ارتباط مستقیم با {currentOp?.name}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-white/[0.04] dark:bg-black/40 backdrop-blur-xl border border-white/15 dark:border-white/10 shadow-xl text-right space-y-3.5">
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0 mt-0.5">
-              <MapPin className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block mb-0.5">آدرس حضوری سالن الف:</span>
-              <p className="text-xs font-bold text-slate-200 leading-relaxed">
-                {db.salon_info?.address || 'آدرس ثبت نشده است (قابل تنظیم از پنل برنامه‌نویس)'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 pt-3 border-t border-white/10">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-              <Phone className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block mb-0.5">
-                شماره تماس مستقیم {currentOp?.name}:
-              </span>
-              <a 
-                href={activePhoneNumber ? `tel:${activePhoneNumber}` : '#'} 
-                className="text-xs font-mono font-black text-emerald-400 hover:underline"
-              >
-                {activePhoneNumber || 'ثبت نشده'}
-              </a>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 pt-1">
-          <a
-            href={db.salon_info?.instagram ? `https://instagram.com/${db.salon_info.instagram}` : '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="py-3 px-2 rounded-2xl bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-rose-500/20 hover:opacity-95 transition active:scale-95"
-          >
-            <InstagramSvg className="w-5 h-5" />
-            <span>پیج اینستاگرام</span>
-          </a>
-
-          <a
-            href={activePhoneNumber ? `tel:${activePhoneNumber}` : '#'}
-            className="py-3 px-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/20 transition active:scale-95"
-          >
-            <Phone className="w-5 h-5" />
-            <span>تماس با {currentOp?.name}</span>
-          </a>
-
-          <a
-            href={db.salon_info?.map_url || '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="py-3 px-2 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-blue-600/20 transition active:scale-95"
-          >
-            <MapPin className="w-5 h-5" />
-            <span>مسیریابی نقشه</span>
-          </a>
-        </div>
       </div>
 
     </main>
