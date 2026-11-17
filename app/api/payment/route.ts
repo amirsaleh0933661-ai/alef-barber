@@ -61,13 +61,11 @@ export async function GET(req: Request) {
 
   const db = await getDb();
   
-  // جستجوی پیشرفته بر اساس شناسه رزرو یا کد رهگیری
   const booking = (db.bookings || []).find((b: any) => 
     b.id === bookingId || b.ref_id === refId || (bookingId && b.id?.includes(bookingId))
   );
 
   if (!booking) {
-    // اگر مستقیم پیدا نشد، اولین مورد PENDING را بردار تا کاربر معطل نشود
     const pendingBooking = (db.bookings || []).find((b: any) => b.payment_status === 'PENDING_PAYMENT');
     if (pendingBooking) {
       pendingBooking.payment_status = 'PAID';
@@ -90,7 +88,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const db = await getDb();
     
-    // جستجو بر اساس booking_id، external_order_id یا مبلغ یکتا
     const targetBooking = (db.bookings || []).find((b: any) => 
       b.id === body.booking_id || 
       b.id === body.external_order_id || 

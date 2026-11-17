@@ -4,22 +4,14 @@ import path from 'path';
 import Redis from 'ioredis';
 
 const dbPath = path.join(process.cwd(), 'data.json');
-
 const redisUrl = process.env.STORAGE_URL || process.env.REDIS_URL || process.env.KV_URL;
 let redisClient: Redis | null = null;
 
 function getRedis(): Redis | null {
   if (!redisClient && redisUrl) {
     try {
-      redisClient = new Redis(redisUrl, {
-        maxRetriesPerRequest: 2,
-        connectTimeout: 5000,
-        lazyConnect: false,
-      });
-      redisClient.on('error', (err) => console.error('خطای ارتباط با دیتابیس ابری:', err));
-    } catch (e) {
-      console.error('عدم موفقیت در ساخت کلاینت ردیس:', e);
-    }
+      redisClient = new Redis(redisUrl, { maxRetriesPerRequest: 2, connectTimeout: 5000 });
+    } catch (e) {}
   }
   return redisClient;
 }
@@ -35,135 +27,43 @@ function minsToTime(m: number): string {
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
-function generateDefaultIntervals() {
-  const intervals: any[] = [];
-  const now = new Date();
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + i);
-    const parts = new Intl.DateTimeFormat('en-US-u-ca-persian', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).formatToParts(d);
-    let y = '', m = '', day = '';
-    for (const p of parts) {
-      if (p.type === 'year') y = p.value;
-      if (p.type === 'month') m = p.value;
-      if (p.type === 'day') day = p.value;
-    }
-    const fullDate = `${y}/${m}/${day}`;
-    intervals.push({ id: `int_1_${i}_a`, operator_id: 1, date: fullDate, start_time: '10:00', end_time: '14:00' });
-    intervals.push({ id: `int_1_${i}_b`, operator_id: 1, date: fullDate, start_time: '16:00', end_time: '21:00' });
-    intervals.push({ id: `int_2_${i}`, operator_id: 2, date: fullDate, start_time: '11:00', end_time: '20:00' });
-  }
-  return intervals;
-}
-
-const defaultData = {
-  current_theme: 'dark',
-  salon_info: {
-    name: 'سالن پیرایش الف',
-    phone: '09120000000',
-    address: 'خیابان اصلی، نبش کوچه ششم، پلاک ۱۲، سالن پیرایش الف',
-    instagram: 'alef_barber',
-    map_url: 'https://maps.google.com',
-    welcome_title: 'به سالن پیرایش الف خوش آمدید',
-    welcome_text: 'تجربه‌ای متمایز از استایل و پیرایش حرفه‌ای. لطفاً خدمات و زمان مدنظرتان را رزرو کنید.',
-    install_prompt_text: 'اگه نمی‌خوای هرسری دنبال لینک نگردی، برنامه رو نصب کن تا با یک لمس همیشه روی صفحه گوشیت باشه!',
-    arrival_rule: 'زمان نوبت تقریبی است؛ لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن الف حضور داشته باشید.',
-    cancellation_rule: 'در صورت انصراف یا نیاز به جابجایی ساعت، لطفاً حداقل ۳ ساعت قبل اطلاع دهید تا حق نوبت سایر مراجعین محفوظ بماند.',
-    tcart_api_key: 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
-  },
-  operators: [
-    { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber' },
-    { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', role: 'barber' },
-    { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer' }
-  ],
-  off_days: [] as { operator_id: number; date: string }[],
-  services: [
-    { id: 's1', operator_id: 1, title: 'اصلاح کلاسیک و فید تخصصی', duration: 45, price: 200000 },
-    { id: 's2', operator_id: 1, title: 'طراحی ریش و خط‌گیری با تیغ', duration: 25, price: 90000 },
-    { id: 's3', operator_id: 1, title: 'پکیج VIP مو و پاکسازی فرزاد', duration: 75, price: 380000 },
-    { id: 's4', operator_id: 2, title: 'کوپ و استایل مدرن فشن', duration: 45, price: 220000 },
-    { id: 's5', operator_id: 2, title: 'فیشیال تخصصی پوست و بلک‌ماسک', duration: 40, price: 250000 },
-    { id: 's6', operator_id: 2, title: 'پکیج کامل گریم و اصلاح داماد فرهاد', duration: 120, price: 700000 }
-  ],
-  portfolios: [
-    { id: 'p1', operator_id: 1, title: 'فید کلاسیک و سایه‌زنی', image: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=500&auto=format&fit=crop&q=60' },
-    { id: 'p2', operator_id: 2, title: 'استایل مدرن و فرم‌دهی ریش', image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=500&auto=format&fit=crop&q=60' }
-  ],
-  intervals: generateDefaultIntervals(),
-  discounts: [
-    { code: 'ALEF20', type: 'percent', value: 20, active: true },
-    { code: 'VIP50T', type: 'fixed', value: 50000, active: true }
-  ],
-  bookings: []
-};
-
-let memoryDb: any = null;
-
 async function getDb() {
   const client = getRedis();
   if (client) {
     try {
       const cached = await client.get('alef_barber_db');
-      if (cached) {
-        memoryDb = JSON.parse(cached);
-        return memoryDb;
-      }
-    } catch (err) {
-      console.error('خطا در خواندن از ردیس:', err);
-    }
+      if (cached) return JSON.parse(cached);
+    } catch (err) {}
   }
-
-  if (memoryDb) return memoryDb;
-
   try {
     if (fs.existsSync(dbPath)) {
-      const content = fs.readFileSync(dbPath, 'utf8');
-      memoryDb = JSON.parse(content);
-    } else {
-      memoryDb = defaultData;
+      return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     }
-  } catch {
-    memoryDb = defaultData;
-  }
-
-  return memoryDb;
+  } catch (e) {}
+  return { bookings: [], salon_info: {}, operators: [], services: [], intervals: [], discounts: [], off_days: [] };
 }
 
 async function saveDb(data: any) {
-  memoryDb = data;
   const client = getRedis();
-
   if (client) {
     try {
       await client.set('alef_barber_db', JSON.stringify(data));
       return;
-    } catch (err) {
-      console.error('خطا در نوشتن در دیتابیس ابری ردیس:', err);
-    }
+    } catch (err) {}
   }
-
   try {
     fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {}
+  } catch (e) {}
 }
 
 export async function GET(req: Request) {
   const db = await getDb();
-  // فقط نوبت‌هایی که پرداخت شده‌اند (PAID) به کلاینت و آرایشگر ارسال می‌شوند
   const filteredDb = {
     ...db,
     bookings: (db.bookings || []).filter((b: any) => b.payment_status === 'PAID')
   };
   return NextResponse.json(filteredDb, {
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    }
+    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
   });
 }
 
@@ -172,35 +72,62 @@ export async function POST(req: Request) {
     const body = await req.json();
     const db = await getDb();
 
+    // بررسی هوشمند وضعیت فاکتور و هماهنگی با تیکارت
+    if (body.action === 'check_booking_status') {
+      const bookingId = body.booking_id;
+      const booking = (db.bookings || []).find((b: any) => b.id === bookingId || b.ref_id === bookingId);
+      
+      if (!booking) return NextResponse.json({ found: false });
+
+      if (booking.payment_status === 'PAID') {
+        return NextResponse.json({ found: true, paid: true, booking });
+      }
+
+      // اگر سفارش هنوز PENDING است، وضعیت آن را از API تیکارت استعلام می‌کنیم تا اگر دستی/اتوماتیک تایید شده، اینجا هم آپدیت شود
+      if (booking.payment_status === 'PENDING_PAYMENT' && booking.ref_id) {
+        try {
+          const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
+          const tcartCheckRes = await fetch(`https://tcartt.com/api/v1/invoices?tracking_code=${booking.ref_id}`, {
+            headers: {
+              'Authorization': `Bearer ${tcartApiKey}`,
+              'Accept': 'application/json'
+            }
+          });
+          
+          if (tcartCheckRes.ok) {
+            const tcartCheckData = await tcartCheckRes.json();
+            // اگر در تیکارت پرداخت شده بود (بر اساس وضعیت درگاه)
+            if (tcartCheckData && (tcartCheckData.status === 'paid' || tcartCheckData.is_paid || tcartCheckData.paid)) {
+              booking.payment_status = 'PAID';
+              await saveDb(db);
+              return NextResponse.json({ found: true, paid: true, booking });
+            }
+          }
+        } catch (e) {}
+      }
+
+      return NextResponse.json({ found: true, paid: false });
+    }
+
+    if (body.action === 'confirm_paid_booking') {
+      const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id || b.ref_id === body.tracking_code);
+      if (booking) {
+        booking.payment_status = 'PAID';
+        await saveDb(db);
+        return NextResponse.json({ success: true, booking });
+      }
+      return NextResponse.json({ error: 'سفارش یافت نشد' }, { status: 404 });
+    }
+
     if (body.action === 'cancel_booking_by_customer') {
       const code = body.code?.trim().toUpperCase();
-      if (!code) {
-        return NextResponse.json({ error: 'لطفاً کد رهگیری سفارش را وارد کنید.' }, { status: 400 });
-      }
-
-      const bookingIndex = (db.bookings || []).findIndex(
-        (b: any) => (b.ref_id?.toUpperCase() === code || b.id?.toUpperCase() === code) && b.payment_status === 'PAID'
-      );
-
-      if (bookingIndex === -1) {
-        return NextResponse.json({ error: 'نوبت قطعی‌شده‌ای با این کد رهگیری در سیستم یافت نشد.' }, { status: 404 });
-      }
-
-      const targetBooking = db.bookings[bookingIndex];
-      const op = (db.operators || []).find((o: any) => o.id === targetBooking.operator_id);
-      const opName = targetBooking.operator_name || op?.name || 'آرایشگر';
-      const opPhone = op?.phone || db.salon_info?.phone || 'شماره تماس سالن';
-
-      db.bookings.splice(bookingIndex, 1);
+      const idx = (db.bookings || []).findIndex((b: any) => (b.ref_id?.toUpperCase() === code || b.id?.toUpperCase() === code) && b.payment_status === 'PAID');
+      if (idx === -1) return NextResponse.json({ error: 'یافت نشد' }, { status: 404 });
+      const target = db.bookings[idx];
+      const op = db.operators.find((o: any) => o.id === target.operator_id);
+      db.bookings.splice(idx, 1);
       await saveDb(db);
-
-      return NextResponse.json({
-        success: true,
-        operator_name: opName,
-        operator_phone: opPhone,
-        date: targetBooking.date,
-        time: targetBooking.start_time
-      });
+      return NextResponse.json({ success: true, operator_name: op?.name || 'آرایشگر', operator_phone: op?.phone || '', date: target.date, time: target.start_time });
     }
 
     if (body.action === 'request_card_payment') {
@@ -213,23 +140,7 @@ export async function POST(req: Request) {
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      const pendingBooking: {
-        id: any;
-        operator_id: number;
-        operator_name: any;
-        date: any;
-        start_time: any;
-        end_time: string;
-        duration: number;
-        customer_name: any;
-        customer_phone: any;
-        services: any;
-        discount_applied: any;
-        amount: number;
-        payment_status: string;
-        created_at: string;
-        ref_id?: string;
-      } = {
+      const pendingBooking = {
         id: booking_id,
         operator_id: opId,
         operator_name: barberName,
@@ -252,8 +163,7 @@ export async function POST(req: Request) {
 
       const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
       const host = req.headers.get('host') || 'alef-barber.vercel.app';
-      const protocol = 'https'; // اجبار به https
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = `https://${host}`;
 
       try {
         const tcartRes = await fetch('https://tcartt.com/api/v1/invoices', {
@@ -270,7 +180,7 @@ export async function POST(req: Request) {
             buyer_ref: customer_phone,
             return_url: `${baseUrl}/?payment_status=success&booking_id=${booking_id}`,
             callback_url: `${baseUrl}/api/payment`,
-            expires_minutes: 5 // مهلت پرداخت دقیقاً ۵ دقیقه
+            expires_minutes: 5
           })
         });
 
@@ -295,17 +205,6 @@ export async function POST(req: Request) {
       } catch (err: any) {
         return NextResponse.json({ success: false, error: 'خطای شبکه در اتصال به تیکارت: ' + err.message });
       }
-    }
-
-    // تایید دستی فاکتور در دیتابیس سایت
-    if (body.action === 'confirm_paid_booking') {
-      const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id || b.ref_id === body.tracking_code);
-      if (booking) {
-        booking.payment_status = 'PAID';
-        await saveDb(db);
-        return NextResponse.json({ success: true, booking });
-      }
-      return NextResponse.json({ error: 'سفارش یافت نشد' }, { status: 404 });
     }
 
     return NextResponse.json({ error: 'عملیات نامعتبر' }, { status: 400 });

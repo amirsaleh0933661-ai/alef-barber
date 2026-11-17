@@ -78,7 +78,7 @@ function getFirstName(fullName: string) {
   return clean.split(' ')[0] || clean;
 }
 
-// کامپوننت تایمر خطی ۵ دقیقه‌ای خفن
+// تایمر خطی ۵ دقیقه‌ای پیشرفته
 function PaymentTimer({ expiresAt, onExpire }: { expiresAt?: string; onExpire: () => void }) {
   const [timeLeft, setTimeLeft] = useState<number>(300);
 
@@ -176,10 +176,6 @@ export default function BookingPage() {
   const [copiedNote, setCopiedNote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const [welcomeStep, setWelcomeStep] = useState<1 | 2 | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isIOS, setIsIOS] = useState(false);
-
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelRefInput, setCancelRefInput] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
@@ -225,26 +221,53 @@ export default function BookingPage() {
     setCurrentTotalMins(n.getHours() * 60 + n.getMinutes());
     loadData();
 
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+    // بررسی URL برای بازگشت موفق از تیکارت
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment_status');
+    const bookingId = params.get('booking_id');
+    const refId = params.get('ref_id');
 
-    const handleBeforeInstall = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-
-    const isApp = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-    const seen = sessionStorage.getItem('seen_welcome_glass');
-    if (!seen && !isApp) {
-      const timer = setTimeout(() => setWelcomeStep(1), 700);
-      return () => clearTimeout(timer);
+    if (paymentStatus === 'success' && bookingId) {
+      fetch('/api/booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check_booking_status', booking_id: bookingId })
+      }).then(r => r.json()).then(res => {
+        if (res.found && res.booking) {
+          setReceipt(res.booking);
+          setCustomInvoice(null);
+        }
+      });
     }
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-    };
   }, []);
+
+  // بررسی خودکار وضعیت پرداخت (Auto-Polling) هر ۳ ثانیه وقتی فاکتور باز است
+  useEffect(() => {
+    if (!customInvoice?.booking_id && !customInvoice?.tracking_code) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/booking', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: 'check_booking_status', 
+            booking_id: customInvoice.booking_id || customInvoice.tracking_code 
+          })
+        });
+        const data = await res.json();
+        if (data.found && data.paid) {
+          setReceipt(data.booking);
+          setCustomInvoice(null);
+          clearInterval(interval);
+          showToast('پرداخت به طور خودکار تایید شد ✓');
+          loadData();
+        }
+      } catch (e) {}
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [customInvoice]);
 
   useEffect(() => {
     const opServices = (db.services || []).filter((s: any) => s.operator_id === operatorId);
@@ -275,11 +298,8 @@ export default function BookingPage() {
 
   const availableBarbers = (db.operators || []).filter((o: any) => o.role !== 'developer');
   const currentOp = availableBarbers.find((o: any) => o.id === operatorId) || availableBarbers[0] || { name: 'فرزاد' };
-  const activePhoneNumber = currentOp?.phone || db.salon_info?.phone || '';
-
   const currentOpServices = (db.services || []).filter((s: any) => s.operator_id === operatorId);
   const activeServiceObjects = currentOpServices.filter((s: any) => selectedServices.includes(s.id));
-
   const totalDuration = activeServiceObjects.reduce((sum: number, s: any) => sum + Number(s.duration || 30), 0);
   const subtotalPrice = activeServiceObjects.reduce((sum: number, s: any) => sum + Number(s.price || 0), 0);
 
@@ -287,10 +307,8 @@ export default function BookingPage() {
   if (appliedDiscount) {
     discountAmount = appliedDiscount.type === 'fixed' ? Math.min(subtotalPrice, appliedDiscount.value) : Math.round((subtotalPrice * appliedDiscount.value) / 100);
   }
-
   const finalPrice = Math.max(0, subtotalPrice - discountAmount);
   const estimatedEndTime = selectedStartTime ? minsToTime(timeToMins(selectedStartTime) + totalDuration) : '';
-  const currentOpPortfolios = (db.portfolios || []).filter((p: any) => p.operator_id === operatorId);
 
   const isSelectedDateOff = (db.off_days || []).some((o: any) => o.operator_id === operatorId && o.date === selectedDate);
   const opIntervalsForDay = (db.intervals || []).filter((it: any) => it.operator_id === operatorId && it.date === selectedDate);
@@ -383,7 +401,7 @@ export default function BookingPage() {
       setIsSubmitting(false);
 
       if (result.success && result.card_number) {
-        setCustomInvoice(result);
+        setCustomInvoice({ ...result, booking_id: bookingId });
         showToast('فاکتور پرداخت صادر شد.');
       } else {
         showToast(result.error || 'خطا در صدور فاکتور');
@@ -394,16 +412,16 @@ export default function BookingPage() {
     }
   };
 
-  // تعریف تابع تایید دستی پرداخت برای رفع خطای بیلد ورسل
   const handleCheckPaymentStatus = async () => {
-    if (!customInvoice?.tracking_code) return;
+    if (!customInvoice?.tracking_code && !customInvoice?.booking_id) return;
     try {
       const res = await fetch('/api/booking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'confirm_paid_booking',
-          tracking_code: customInvoice.tracking_code
+          tracking_code: customInvoice.tracking_code,
+          booking_id: customInvoice.booking_id
         })
       });
       const result = await res.json();
@@ -413,7 +431,7 @@ export default function BookingPage() {
         showToast('پرداخت تایید شد و نوبت قطعی گردید ✓');
         loadData();
       } else {
-        showToast('هنوز تاییدیه ثبت نشده است.');
+        showToast('هنوز تاییدیه درگاه ثبت نشده است.');
       }
     } catch {
       showToast('خطا در بررسی وضعیت');
@@ -454,26 +472,20 @@ export default function BookingPage() {
   };
 
   return (
-    <main className={`min-h-screen ${c.bg} ${c.text} py-10 px-4 font-sans relative overflow-hidden flex flex-col items-center justify-start transition-colors duration-300`} dir="rtl">
+    <main className={`min-h-screen ${c.bg} ${c.text} py-10 px-4 font-sans relative flex flex-col items-center justify-start`} dir="rtl">
       
       {toast && (
         <div className="fixed top-4 left-4 right-4 max-w-md mx-auto z-50 p-3.5 bg-slate-900 text-white rounded-2xl shadow-xl flex items-center justify-between text-xs font-bold border border-slate-700">
           <span>{toast}</span>
-          <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg">
-            <X className="w-4 h-4" />
-          </button>
+          <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      {/* صفحه پرداخت اختصاصی خفن با تایمر خطی و ریال/تومان */}
+      {/* صفحه پرداخت اختصاصی تیکارت با بررسی خودکار */}
       {customInvoice && (
         <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-3xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-[0_0_50px_rgba(245,158,11,0.15)] space-y-5 relative">
-            
-            <button
-              onClick={() => setCustomInvoice(null)}
-              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/10 transition z-10"
-            >
+          <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 relative">
+            <button onClick={() => setCustomInvoice(null)} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/10 transition z-10">
               <X className="w-4 h-4" />
             </button>
 
@@ -481,54 +493,32 @@ export default function BookingPage() {
               <span className="text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-3.5 py-1 rounded-full font-black inline-flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-amber-400" /> درگاه پرداخت امن کارت‌به‌کارت
               </span>
-              <h3 className="text-xs font-bold text-slate-300 mt-2">کد پیگیری فاکتور: <span className="font-mono text-white font-black tracking-wider">{customInvoice.tracking_code}</span></h3>
+              <h3 className="text-xs font-bold text-slate-300 mt-2">کد پیگیری فاکتور: <span className="font-mono text-white font-black">{customInvoice.tracking_code}</span></h3>
             </div>
 
-            {/* تایمر خطی ۵ دقیقه‌ای */}
-            <PaymentTimer 
-              expiresAt={customInvoice.expires_at} 
-              onExpire={() => {
-                showToast('مهلت پرداخت ۵ دقیقه‌ای به پایان رسید.');
-                setCustomInvoice(null);
-              }} 
-            />
+            <PaymentTimer expiresAt={customInvoice.expires_at} onExpire={() => { showToast('مهلت پرداخت به پایان رسید.'); setCustomInvoice(null); }} />
 
-            {/* باکس نمایش مبالغ (تومان و ریال با قابلیت کپی) */}
-            <div className="bg-slate-950 p-4.5 rounded-2xl border border-slate-800 text-center space-y-3 shadow-inner">
+            <div className="bg-slate-950 p-4.5 rounded-2xl border border-slate-800 text-center space-y-3">
               <div className="space-y-1">
-                <span className="text-[11px] text-slate-400 block font-medium">مبلغ دقیق قابل پرداخت (حتماً با رقم‌های اعشار/یکتا واریز شود):</span>
-                <div className="text-2xl font-black text-amber-400 font-mono tracking-wider">
+                <span className="text-[11px] text-slate-400 block font-medium">مبلغ دقیق قابل واریز (با رقم یکتا):</span>
+                <div className="text-2xl font-black text-amber-400 font-mono">
                   {customInvoice.unique_amount_toman?.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-300">تومان</span>
                 </div>
-                {/* نمایش مبلغ به ریال */}
                 <div className="text-sm font-bold text-emerald-400 font-mono">
                   معادل {(customInvoice.unique_amount_toman * 10)?.toLocaleString('fa-IR')} ریال
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(String(customInvoice.unique_amount_toman));
-                    showToast('مبلغ تومانی کپی شد ✓');
-                  }}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-                >
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                <button onClick={() => { navigator.clipboard.writeText(String(customInvoice.unique_amount_toman)); showToast('تومان کپی شد ✓'); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
                   <Copy className="w-3.5 h-3.5 text-amber-400" /> کپی تومان
                 </button>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(String(customInvoice.unique_amount_toman * 10));
-                    showToast('مبلغ ریالی کپی شد ✓');
-                  }}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-                >
+                <button onClick={() => { navigator.clipboard.writeText(String(customInvoice.unique_amount_toman * 10)); showToast('ریال کپی شد ✓'); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
                   <Copy className="w-3.5 h-3.5 text-emerald-400" /> کپی ریال
                 </button>
               </div>
             </div>
 
-            {/* مشخصات کارت مقصد */}
             <div className="bg-gradient-to-br from-blue-950/80 to-slate-900 p-4.5 rounded-2xl border border-blue-800/50 space-y-3">
               <div className="flex justify-between items-center text-xs text-blue-300">
                 <span>شماره کارت مقصد ({customInvoice.bank_name}):</span>
@@ -537,93 +527,84 @@ export default function BookingPage() {
               <div className="font-mono text-xl font-black tracking-widest text-white text-center py-1.5 bg-black/40 rounded-xl border border-blue-500/20">
                 {customInvoice.card_number}
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(customInvoice.card_number);
-                  showToast('شماره کارت کپی شد ✓');
-                }}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-3 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
-              >
-                <Copy className="w-4 h-4" /> کپی شماره کارت بانکی
+              <button onClick={() => { navigator.clipboard.writeText(customInvoice.card_number); showToast('شماره کارت کپی شد ✓'); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-3 rounded-xl font-bold transition flex items-center justify-center gap-2">
+                <Copy className="w-4 h-4" /> کپی شماره کارت
               </button>
             </div>
 
-            <button
-              onClick={handleCheckPaymentStatus}
-              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2"
-            >
-              <CheckCircle2 className="w-4 h-4" /> واریز کردم؛ تایید و قطعی کردن نوبت
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-300 text-center leading-relaxed">
+              ⏳ در حال بررسی خودکار وضعیت پرداخت... به محض تایید درگاه، نوبت شما خودکار قطعی می‌شود.
+            </div>
+
+            <button onClick={handleCheckPaymentStatus} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2">
+              <CheckCircle2 className="w-4 h-4" /> بررسی دستی تاییدیه پرداخت
             </button>
 
-            <button
-              onClick={() => setCustomInvoice(null)}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
-            >
-              بازگشت به سایت
+            <button onClick={() => setCustomInvoice(null)} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition">
+              بستن صفحه
             </button>
           </div>
         </div>
       )}
 
-      {/* فرم اصلی رزرو نوبت */}
+      {/* رسید موفقیت و نمایش نکات */}
+      {receipt && (
+        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-slate-900 border border-emerald-500/40 text-white rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+            <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
+            <h3 className="text-base font-black">پرداخت تایید شد و نوبت قطعی گردید! 🎉</h3>
+            <div className="text-xs space-y-2 bg-slate-800/60 p-4 rounded-2xl text-right">
+              <div className="flex justify-between"><span className="text-slate-400">مشتری:</span><span className="font-bold">{receipt.customer_name}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">آرایشگر:</span><span className="font-bold text-blue-400">{receipt.operator_name}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">تاریخ و ساعت:</span><span className="font-mono">{receipt.date} ساعت {receipt.start_time}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">کد پیگیری:</span><span className="font-mono text-amber-400">{receipt.ref_id}</span></div>
+            </div>
+
+            {/* نکات مهم برای مشتری */}
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-[11px] text-blue-200 text-right space-y-1">
+              <p className="font-bold">📌 نکات مهم حضور در سالن:</p>
+              <p>• لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن حضور داشته باشید.</p>
+              <p>• کد پیگیری خود را برای لغو یا پیگیری‌های بعدی یادداشت کنید.</p>
+            </div>
+
+            <button onClick={copyAppointmentText} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold transition">
+              {copiedNote ? 'کپی شد ✓' : 'کپی مشخصات نوبت'}
+            </button>
+            <button onClick={() => { setReceipt(null); setSelectedStartTime(null); loadData(); }} className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">
+              رزرو نوبت جدید
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* فرم اصلی رزرو */}
       <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 sm:p-8 space-y-7 shadow-xl relative z-10 mb-6`} dir="rtl">
-        
         <div className={`space-y-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} pb-5`}>
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
               <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-500 border border-blue-500/20">
                 <Sparkles className="w-3.5 h-3.5" /> نوبت‌دهی آنلاین
               </div>
-
-              <button
-                type="button"
-                onClick={() => setShowCancelModal(true)}
-                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 transition"
-              >
-                <Search className="w-3 h-3" />
-                <span>لغو نوبت با کد</span>
-              </button>
             </div>
-
-            <button
-              onClick={toggleClientTheme}
-              className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold ${
-                isDark ? 'bg-slate-800 border-slate-700 text-amber-400' : 'bg-slate-100 border-slate-300 text-slate-700'
-              }`}
-            >
+            <button onClick={toggleClientTheme} className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold ${isDark ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-700'}`}>
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
-
           <div className="text-center space-y-1">
-            <h1 className={`text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'} tracking-tight`}>
-              {db.salon_info?.name || 'سالن پیرایش الف'}
-            </h1>
+            <h1 className={`text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>{db.salon_info?.name || 'سالن پیرایش الف'}</h1>
             <p className={`text-xs ${c.muted}`}>رزرو آنلاین با آرایشگران سالن الف</p>
           </div>
         </div>
 
         {/* انتخاب آرایشگر */}
         <div className="space-y-2.5">
-          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
-            <User className="w-4 h-4 text-blue-500" /> انتخاب آرایشگر:
-          </label>
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}><User className="w-4 h-4 text-blue-500" /> انتخاب آرایشگر:</label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {availableBarbers.map((op: any) => {
               const isSelected = operatorId === op.id;
               return (
-                <button
-                  key={op.id}
-                  type="button"
-                  onClick={() => setOperatorId(op.id)}
-                  className={`p-4 rounded-2xl border text-right transition flex justify-between items-center ${
-                    isSelected ? c.buttonSelected : `${c.innerCard} ${c.text}`
-                  }`}
-                >
-                  <div>
-                    <span className="text-sm font-black block">{op.name}</span>
-                    <span className="text-[10px] text-slate-400 font-normal">مشاهده نوبت‌ها</span>
-                  </div>
+                <button key={op.id} type="button" onClick={() => setOperatorId(op.id)} className={`p-4 rounded-2xl border text-right transition flex justify-between items-center ${isSelected ? c.buttonSelected : `${c.innerCard} ${c.text}`}`}>
+                  <div><span className="text-sm font-black block">{op.name}</span></div>
                   <div className={`w-3.5 h-3.5 rounded-full ${isSelected ? 'bg-white shadow' : 'bg-slate-400'}`}></div>
                 </button>
               );
@@ -631,85 +612,43 @@ export default function BookingPage() {
           </div>
         </div>
 
-        {/* خدمات اختصاصی */}
+        {/* خدمات */}
         <div className={`${c.innerCard} border rounded-2xl p-4 sm:p-5 space-y-3`}>
           <div className="flex justify-between items-center">
-            <label className="text-xs font-bold flex items-center gap-1.5">
-              <Scissors className="w-4 h-4 text-purple-500" /> خدمات اختصاصی {currentOp?.name}:
-            </label>
-            <span className="text-[11px] bg-purple-500/15 text-purple-500 border border-purple-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
-              <Timer className="w-3.5 h-3.5" /> مجموع: {formatDuration(totalDuration)}
-            </span>
+            <label className="text-xs font-bold flex items-center gap-1.5"><Scissors className="w-4 h-4 text-purple-500" /> خدمات اختصاصی:</label>
+            <span className="text-[11px] bg-purple-500/15 text-purple-500 border border-purple-500/30 px-2.5 py-0.5 rounded-full font-bold">مجموع: {formatDuration(totalDuration)}</span>
           </div>
-
           <div className="space-y-2">
-            {currentOpServices.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-3">خدمتی برای این آرایشگر ثبت نشده است.</p>
-            ) : (
-              currentOpServices.map((srv: any) => {
-                const isChecked = selectedServices.includes(srv.id);
-                return (
-                  <div
-                    key={srv.id}
-                    onClick={() => toggleService(srv.id)}
-                    className={`p-3.5 rounded-xl border flex justify-between items-center cursor-pointer transition ${
-                      isChecked
-                        ? 'bg-purple-950/25 border-purple-500 text-white shadow-sm'
-                        : `${c.card} hover:border-purple-400/50`
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 text-xs font-bold">
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                        isChecked ? 'bg-purple-600 border-purple-500 text-white' : 'border-slate-400'
-                      }`}>
-                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                      </div>
-                      <span>{srv.title}</span>
+            {currentOpServices.map((srv: any) => {
+              const isChecked = selectedServices.includes(srv.id);
+              return (
+                <div key={srv.id} onClick={() => toggleService(srv.id)} className={`p-3.5 rounded-xl border flex justify-between items-center cursor-pointer transition ${isChecked ? 'bg-purple-950/25 border-purple-500 text-white' : `${c.card}`}`}>
+                  <div className="flex items-center gap-2.5 text-xs font-bold">
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${isChecked ? 'bg-purple-600 border-purple-500 text-white' : 'border-slate-400'}`}>
+                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                     </div>
-
-                    <div className="text-left font-mono">
-                      <span className="text-purple-500 font-bold text-xs">+{Number(srv.price).toLocaleString('fa-IR')} ت</span>
-                      <span className={`text-[11px] ${c.muted} font-sans block mt-0.5`}>{srv.duration} دقیقه</span>
-                    </div>
+                    <span>{srv.title}</span>
                   </div>
-                );
-              })
-            )}
+                  <div className="text-left font-mono">
+                    <span className="text-purple-500 font-bold text-xs">+{Number(srv.price).toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* تقویم شمسی */}
+        {/* تقویم */}
         <div className="space-y-2.5">
-          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
-            <Calendar className="w-4 h-4 text-blue-500" /> انتخاب روز از تقویم سالن الف:
-          </label>
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}><Calendar className="w-4 h-4 text-blue-500" /> انتخاب روز:</label>
           <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
             {shamsiDays.map((d) => {
               const isSelected = selectedDate === d.date;
-              const isDayOff = (db.off_days || []).some(
-                (o: any) => o.operator_id === operatorId && o.date === d.date
-              );
-
+              const isDayOff = (db.off_days || []).some((o: any) => o.operator_id === operatorId && o.date === d.date);
               return (
-                <button
-                  key={d.date}
-                  type="button"
-                  onClick={() => { setSelectedDate(d.date); setSelectedStartTime(null); }}
-                  className={`py-3 px-1 rounded-2xl border text-center transition flex flex-col items-center justify-center relative ${
-                    isDayOff 
-                      ? 'bg-rose-950/20 border-rose-900/40 text-rose-400 opacity-80' 
-                      : isSelected 
-                      ? `${c.buttonSelected} scale-105` 
-                      : `${c.innerCard} ${c.muted}`
-                  }`}
-                >
+                <button key={d.date} type="button" onClick={() => { setSelectedDate(d.date); setSelectedStartTime(null); }} className={`py-3 px-1 rounded-2xl border text-center transition flex flex-col items-center justify-center relative ${isDayOff ? 'bg-rose-950/20 border-rose-900/40 text-rose-400 opacity-80' : isSelected ? `${c.buttonSelected} scale-105` : `${c.innerCard} ${c.muted}`}`}>
                   <span className="text-[10px] opacity-80">{d.weekday}</span>
                   <span className="font-mono text-sm mt-0.5 font-black">{d.dayNum}</span>
-                  {isDayOff && (
-                    <span className="text-[9px] bg-rose-500 text-white px-1.5 py-0.2 rounded mt-0.5 font-bold">
-                      تعطیل
-                    </span>
-                  )}
                 </button>
               );
             })}
@@ -718,147 +657,44 @@ export default function BookingPage() {
 
         {/* ساعت‌های شروع */}
         <div className="space-y-2.5">
-          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
-            <Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت با {currentOp?.name}:
-          </label>
-
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}><Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت:</label>
           {isSelectedDateOff ? (
-            <div className="py-7 text-center bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold flex flex-col items-center gap-1">
-              <Ban className="w-5 h-5 text-rose-400" />
-              <span>{currentOp?.name} در این تاریخ حضور ندارد (روز تعطیل).</span>
-            </div>
+            <div className="py-5 text-center bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold">آرایشگر در این روز حضور ندارد.</div>
           ) : availableStartSlots.length === 0 ? (
-            <p className={`py-6 text-center ${c.innerCard} rounded-2xl border ${c.muted} text-xs`}>
-              تایم بازی برای این روز وجود ندارد.
-            </p>
+            <p className={`py-5 text-center ${c.innerCard} rounded-2xl border ${c.muted} text-xs`}>تایم خالی وجود ندارد.</p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
               {availableStartSlots.map((slot) => {
                 const isSelected = selectedStartTime === slot.time;
                 return (
-                  <button
-                    key={slot.time}
-                    type="button"
-                    disabled={!slot.available}
-                    onClick={() => setSelectedStartTime(slot.time)}
-                    className={`py-3 px-2 rounded-xl text-xs font-black border flex flex-col items-center justify-center transition ${
-                      !slot.available
-                        ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 cursor-not-allowed line-through'
-                        : isSelected
-                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg'
-                        : `${c.innerCard} text-emerald-500 hover:border-emerald-500/50`
-                    }`}
-                  >
+                  <button key={slot.time} type="button" disabled={!slot.available} onClick={() => setSelectedStartTime(slot.time)} className={`py-3 px-2 rounded-xl text-xs font-black border flex flex-col items-center justify-center transition ${!slot.available ? 'bg-rose-500/10 text-rose-400 cursor-not-allowed line-through' : isSelected ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg' : `${c.innerCard} text-emerald-500`}`}>
                     <span className="font-mono text-sm">{slot.time}</span>
-                    <span className="text-[10px] mt-0.5">
-                      {!slot.available ? 'پر' : isSelected ? 'انتخاب ✓' : 'خالی'}
-                    </span>
                   </button>
                 );
               })}
             </div>
           )}
-
-          {selectedStartTime && !isSelectedDateOff && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-500 flex justify-between items-center">
-              <span>بازه تقریبی نوبت:</span>
-              <span className="font-mono font-black">از {selectedStartTime} تا حدود {estimatedEndTime}</span>
-            </div>
-          )}
         </div>
 
-        {/* کد تخفیف */}
-        {!isSelectedDateOff && (
-          <div className={`${c.innerCard} border p-4 rounded-2xl space-y-2`}>
-            <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
-              <Tag className="w-3.5 h-3.5 text-amber-500" /> کد تخفیف:
-            </label>
-            <form onSubmit={handleApplyDiscount} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="مثال: ALEF20"
-                value={discountInput}
-                onChange={(e) => setDiscountInput(e.target.value)}
-                className={`flex-1 ${c.input} border text-xs p-2.5 rounded-xl uppercase font-mono focus:outline-none`}
-              />
-              <button
-                type="submit"
-                className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 rounded-xl text-xs font-bold transition"
-              >
-                اعمال
-              </button>
-            </form>
-            {discountMsg && (
-              <p className={`text-[11px] font-bold mt-1 ${discountMsg.type === 'ok' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {discountMsg.text}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* مشخصات مراجع و دکمه پرداخت */}
-        {selectedStartTime && !receipt && !isSelectedDateOff && (
+        {/* فرم مشخصات و پرداخت */}
+        {selectedStartTime && !isSelectedDateOff && (
           <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-2xl space-y-4`}>
             <h3 className={`text-xs font-black ${c.text}`}>مشخصات مراجع:</h3>
             <div className="space-y-3">
-              <div>
-                <label className="text-[11px] text-slate-300 font-bold block mb-1">نام و نام خانوادگی:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: علی حسینی"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className={`w-full ${c.input} border text-xs p-3 rounded-xl focus:outline-none`}
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-slate-300 font-bold block mb-1">شماره موبایل (۱۱ رقم):</label>
-                <input
-                  type="tel"
-                  required
-                  inputMode="numeric"
-                  maxLength={11}
-                  placeholder="۰۹۱۲۳۴۵۶۷۸۹"
-                  value={phone}
-                  onChange={(e) => {
-                    const cleanDigits = e.target.value.replace(/\D/g, '').slice(0, 11);
-                    setPhone(cleanDigits);
-                  }}
-                  className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono text-center tracking-widest focus:outline-none`}
-                />
-              </div>
+              <input type="text" required placeholder="نام و نام خانوادگی" value={name} onChange={(e) => setName(e.target.value)} className={`w-full ${c.input} border text-xs p-3 rounded-xl focus:outline-none`} />
+              <input type="tel" required inputMode="numeric" maxLength={11} placeholder="شماره موبایل (۰۹۱۲...)" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono text-center tracking-widest focus:outline-none`} />
             </div>
 
-            <div className={`border-t ${isDark ? 'border-slate-800' : 'border-slate-200'} pt-3 space-y-1.5 text-xs`}>
-              <div className="flex justify-between">
-                <span className={c.muted}>آرایشگر:</span>
-                <span className="font-bold text-blue-500">{currentOp?.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>مجموع خدمات:</span>
-                <span>{subtotalPrice.toLocaleString('fa-IR')} تومان</span>
-              </div>
-              {appliedDiscount && (
-                <div className="flex justify-between text-amber-500 font-bold">
-                  <span>تخفیف:</span>
-                  <span>- {discountAmount.toLocaleString('fa-IR')} تومان</span>
-                </div>
-              )}
-              <div className={`flex justify-between font-black text-sm pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+            <div className={`border-t pt-3 space-y-1.5 text-xs ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+              <div className="flex justify-between font-black text-sm pt-1">
                 <span>مبلغ نهایی:</span>
                 <span className="text-emerald-500 font-mono text-base">{finalPrice.toLocaleString('fa-IR')} تومان</span>
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={isSubmitting} className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2">
               <CreditCard className="w-4 h-4" />
-              {isSubmitting ? 'در حال صدور فاکتور تیکارت...' : `پرداخت کارت‌به‌کارت (${finalPrice.toLocaleString('fa-IR')} تومان)`}
+              {isSubmitting ? 'در حال صدور فاکتور...' : `پرداخت کارت‌به‌کارت (${finalPrice.toLocaleString('fa-IR')} تومان)`}
             </button>
           </form>
         )}
