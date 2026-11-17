@@ -76,9 +76,9 @@ const defaultData = {
     tcart_api_key: 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
   },
   operators: [
-    { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber', merchant_id: '' },
-    { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', role: 'barber', merchant_id: '' },
-    { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer', merchant_id: '' }
+    { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber' },
+    { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', role: 'barber' },
+    { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer' }
   ],
   off_days: [] as { operator_id: number; date: string }[],
   services: [
@@ -182,11 +182,11 @@ export async function POST(req: Request) {
       }
 
       const bookingIndex = (db.bookings || []).findIndex(
-        (b: any) => b.ref_id?.toUpperCase() === code || b.id?.toUpperCase() === code
+        (b: any) => (b.ref_id?.toUpperCase() === code || b.id?.toUpperCase() === code) && b.payment_status === 'PAID'
       );
 
       if (bookingIndex === -1) {
-        return NextResponse.json({ error: 'نوبتی با این کد رهگیری در سیستم یافت نشد.' }, { status: 404 });
+        return NextResponse.json({ error: 'نوبت قطعی‌شده‌ای با این کد رهگیری در سیستم یافت نشد.' }, { status: 404 });
       }
 
       const targetBooking = db.bookings[bookingIndex];
@@ -225,7 +225,7 @@ export async function POST(req: Request) {
     }
 
     if (body.action === 'request_card_payment' || body.action === 'request_gateway_payment') {
-      const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount, callback_url } = body;
+      const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount } = body;
       const opId = Number(operator_id) || 1;
       const op = db.operators.find((o: any) => o.id === opId);
       const barberName = op?.name || 'آرایشگر';
@@ -248,7 +248,7 @@ export async function POST(req: Request) {
         services: services || [],
         discount_applied: discount_code || null,
         amount: Number(amount),
-        payment_status: 'PENDING_PAYMENT',
+        payment_status: 'PENDING_PAYMENT', // تا پرداخت نشود، در لیست آرایشگر نمایش داده نمی‌شود
         created_at: new Date().toISOString()
       };
 
@@ -262,7 +262,6 @@ export async function POST(req: Request) {
       const dynamicCallbackUrl = `${protocol}://${host}/api/payment`;
 
       try {
-        console.log('--- ارسال فاکتور به تیکارت ---');
         const tcartRes = await fetch('https://tcartt.com/api/v1/invoices', {
           method: 'POST',
           headers: {
@@ -277,7 +276,7 @@ export async function POST(req: Request) {
             buyer_ref: customer_phone,
             return_url: `${protocol}://${host}/?payment_status=success&booking_id=${bookingId}`,
             callback_url: dynamicCallbackUrl,
-            expires_minutes: 30
+            expires_minutes: 5 // تنظیم مهلت پرداخت روی دقیقاً ۵ دقیقه
           })
         });
 
@@ -286,14 +285,11 @@ export async function POST(req: Request) {
         try {
           tcartData = JSON.parse(rawText);
         } catch (e) {
-          console.error('پاسخ غیر-JSON از تیکارت:', rawText);
           return NextResponse.json({
             success: false,
-            error: 'پاسخ نامعتبر از سرور تیکارت (کلید API، اشتراک یا کارت بانکی خود را بررسی کنید)'
+            error: 'پاسخ نامعتبر از سرور تیکارت'
           });
         }
-
-        console.log('پاسخ تیکارت:', tcartData);
 
         if (tcartRes.ok && tcartData && tcartData.payment_url) {
           return NextResponse.json({
@@ -305,11 +301,10 @@ export async function POST(req: Request) {
         } else {
           return NextResponse.json({
             success: false,
-            error: tcartData.error || tcartData.message || 'خطا در صدور فاکتور در تیکارت (کلید API را بررسی کنید)'
+            error: tcartData.error || tcartData.message || 'خطا در صدور فاکتور در تیکارت'
           });
         }
       } catch (err: any) {
-        console.error('خطای ارتباط با تیکارت:', err);
         return NextResponse.json({
           success: false,
           error: 'خطای شبکه در اتصال به تیکارت: ' + err.message
@@ -320,7 +315,7 @@ export async function POST(req: Request) {
     if (body.action === 'confirm_paid_booking') {
       const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id);
       if (booking) {
-        booking.payment_status = 'PAID';
+        booking.payment_status = 'PAID'; // تغییر وضعیت به پرداخت شده تا در پنل آرایشگر ظاهر شود
         booking.ref_id = body.transaction_ref || ('TCART-' + Math.floor(10000000 + Math.random() * 90000000));
         await saveDb(db);
         return NextResponse.json({ success: true, booking });
