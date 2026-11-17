@@ -252,8 +252,9 @@ export async function POST(req: Request) {
       await saveDb(db);
 
       const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
-      const host = req.headers.get('host') || 'localhost:3000';
-      const protocol = host.includes('localhost') ? 'http' : 'https';
+      const host = req.headers.get('host') || 'alef-barber.vercel.app';
+      // همیشه https را اجبار می‌کنیم تا خطای تیکارت برطرف شود
+      const protocol = 'https';
 
       try {
         const tcartRes = await fetch('https://tcartt.com/api/v1/invoices', {
