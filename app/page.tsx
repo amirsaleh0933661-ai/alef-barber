@@ -78,6 +78,58 @@ function getFirstName(fullName: string) {
   return clean.split(' ')[0] || clean;
 }
 
+// کامپوننت تایمر خطی ۵ دقیقه‌ای خفن
+function PaymentTimer({ expiresAt, onExpire }: { expiresAt?: string; onExpire: () => void }) {
+  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 دقیقه به ثانیه
+
+  useEffect(() => {
+    // اگر زمان انقضا از سرور آمده باشد اختلاف را حساب میکنیم، وگرنه ۵ دقیقه پیش فرض
+    let initialSeconds = 300;
+    if (expiresAt) {
+      const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
+      if (diff > 0) initialSeconds = diff;
+    }
+    setTimeLeft(initialSeconds);
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          onExpire();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+
+  const mins = Math.floor(timeLeft / 60);
+  const secs = timeLeft % 60;
+  const progressPercent = (timeLeft / 300) * 100;
+
+  return (
+    <div className="space-y-2 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+      <div className="flex justify-between items-center text-xs font-bold">
+        <span className="text-amber-400 flex items-center gap-1.5">
+          <Timer className="w-4 h-4 animate-spin" /> مهلت باقی‌مانده واریز:
+        </span>
+        <span className="font-mono text-white text-sm">
+          {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+        </span>
+      </div>
+      {/* تایمر خطی (Progress Bar) */}
+      <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5">
+        <div 
+          className="bg-gradient-to-l from-amber-500 to-emerald-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function BookingPage() {
   const [shamsiDays, setShamsiDays] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -121,7 +173,6 @@ export default function BookingPage() {
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // اطلاعات صفحه پرداخت اختصاصی تیکارت
   const [customInvoice, setCustomInvoice] = useState<any | null>(null);
   const [receipt, setReceipt] = useState<any | null>(null);
   const [copiedNote, setCopiedNote] = useState(false);
@@ -336,7 +387,6 @@ export default function BookingPage() {
     }
   };
 
-  // درخواست ساخت فاکتور و دریافت مشخصات کارت‌به‌کارت اختصاصی برای نمایش در صفحه سایت
   const handleProceedPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSelectedDateOff) {
@@ -390,7 +440,6 @@ export default function BookingPage() {
       setIsSubmitting(false);
 
       if (result.success && result.card_number) {
-        // نمایش صفحه پرداخت اختصاصی داخل خود سایت با اطلاعات تیکارت
         setCustomInvoice(result);
         showToast('فاکتور کارت‌به‌کارت با موفقیت ایجاد شد.');
       } else {
@@ -443,27 +492,10 @@ export default function BookingPage() {
 
   const copyAppointmentText = () => {
     if (!receipt) return;
-    const text = `نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما با موفقیت ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}\n\nنکات مهم:\n• ${db.salon_info?.arrival_rule || 'لطفاً ۵ الی ۱۰ دقیقه قبل در سالن حضور داشته باشید.'}\n• ${db.salon_info?.cancellation_rule || 'در صورت نیاز به کنسلی حداقل ۳ ساعت قبل هماهنگ فرمایید.'}`;
+    const text = `نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما با موفقیت ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}`;
     navigator.clipboard.writeText(text);
     setCopiedNote(true);
     setTimeout(() => setCopiedNote(false), 2500);
-  };
-
-  const closeWelcomeModal = () => {
-    sessionStorage.setItem('seen_welcome_glass', 'true');
-    setWelcomeStep(null);
-  };
-
-  const triggerPwaInstall = () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then(() => {
-        closeWelcomeModal();
-      });
-    } else {
-      alert('برای نصب برنامه: از منوی سه‌نقطه بالای مرورگر، گزینه «افزودن به صفحه اصلی» (Add to Home screen) را بزنید.');
-      closeWelcomeModal();
-    }
   };
 
   return (
@@ -478,10 +510,10 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* ۱. صفحه پرداخت اختصاصی تیکارت (داخل خود سایت با مبلغ یکتا و شماره کارت) */}
+      {/* صفحه پرداخت اختصاصی خفن با تایمر خطی و ریال/تومان */}
       {customInvoice && (
-        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 relative">
+        <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-3xl flex items-center justify-center p-4 animate-fadeIn">
+          <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-[0_0_50px_rgba(245,158,11,0.15)] space-y-5 relative">
             
             <button
               onClick={() => setCustomInvoice(null)}
@@ -490,50 +522,79 @@ export default function BookingPage() {
               <X className="w-4 h-4" />
             </button>
 
-            <div className="text-center space-y-1 border-b border-slate-800 pb-4">
-              <span className="text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full font-bold">
-                پرداخت کارت‌به‌کارت تیکارت (مهلت ۵ دقیقه)
+            <div className="text-center space-y-1.5 border-b border-slate-800 pb-4">
+              <span className="text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-3.5 py-1 rounded-full font-black inline-flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-amber-400" /> درگاه پرداخت امن کارت‌به‌کارت
               </span>
-              <h3 className="text-sm font-black text-white mt-2">کد پیگیری سفارش: <span className="font-mono text-amber-400">{customInvoice.tracking_code}</span></h3>
+              <h3 className="text-xs font-bold text-slate-300 mt-2">کد پیگیری فاکتور: <span className="font-mono text-white font-black tracking-wider">{customInvoice.tracking_code}</span></h3>
             </div>
 
-            {/* مبلغ دقیق و یکتا */}
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center space-y-2">
-              <p className="text-xs text-slate-400">مبلغ دقیق را واریز کنید:</p>
-              <div className="text-2xl font-black text-amber-400 font-mono tracking-wider">
-                {customInvoice.unique_amount_toman?.toLocaleString('fa-IR')} <span className="text-xs font-normal">تومان</span>
+            {/* تایمر خطی ۵ دقیقه‌ای */}
+            <PaymentTimer 
+              expiresAt={customInvoice.expires_at} 
+              onExpire={() => {
+                showToast('مهلت پرداخت ۵ دقیقه‌ای به پایان رسید.');
+                setCustomInvoice(null);
+              }} 
+            />
+
+            {/* باکس نمایش مبالغ (تومان و ریال با قابلیت کپی) */}
+            <div className="bg-slate-950 p-4.5 rounded-2xl border border-slate-800 text-center space-y-3 shadow-inner">
+              <div className="space-y-1">
+                <span className="text-[11px] text-slate-400 block font-medium">مبلغ دقیق قابل پرداخت (حتماً با رقم‌های اعشار/یکتا واریز شود):</span>
+                <div className="text-2xl font-black text-amber-400 font-mono tracking-wider">
+                  {customInvoice.unique_amount_toman?.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-300">تومان</span>
+                </div>
+                {/* نمایش مبلغ به ریال */}
+                <div className="text-sm font-bold text-emerald-400 font-mono">
+                  معادل {(customInvoice.unique_amount_toman * 10)?.toLocaleString('fa-IR')} ریال
+                </div>
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(String(customInvoice.unique_amount_toman));
-                  showToast('مبلغ دقیق کپی شد ✓');
-                }}
-                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl transition flex items-center justify-center gap-1.5 mx-auto font-bold"
-              >
-                <Copy className="w-3.5 h-3.5 text-amber-400" /> کپی مبلغ دقیق
-              </button>
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(String(customInvoice.unique_amount_toman));
+                    showToast('مبلغ تومانی کپی شد ✓');
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5 text-amber-400" /> کپی تومان
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(String(customInvoice.unique_amount_toman * 10));
+                    showToast('مبلغ ریالی کپی شد ✓');
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5 text-emerald-400" /> کپی ریال
+                </button>
+              </div>
             </div>
 
             {/* مشخصات کارت مقصد */}
-            <div className="bg-gradient-to-br from-blue-950 to-slate-900 p-4 rounded-2xl border border-blue-800/40 space-y-3">
-              <p className="text-xs text-blue-300">به این کارت واریز کنید ({customInvoice.bank_name}):</p>
-              <div className="font-mono text-lg font-black tracking-widest text-white text-center py-1">
+            <div className="bg-gradient-to-br from-blue-950/80 to-slate-900 p-4.5 rounded-2xl border border-blue-800/50 space-y-3">
+              <div className="flex justify-between items-center text-xs text-blue-300">
+                <span>شماره کارت مقصد ({customInvoice.bank_name}):</span>
+                <span className="font-bold text-white">{customInvoice.card_holder}</span>
+              </div>
+              <div className="font-mono text-xl font-black tracking-widest text-white text-center py-1.5 bg-black/40 rounded-xl border border-blue-500/20">
                 {customInvoice.card_number}
               </div>
-              <p className="text-xs text-slate-400 text-center">به نام: <span className="text-slate-200 font-bold">{customInvoice.card_holder}</span></p>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(customInvoice.card_number);
                   showToast('شماره کارت کپی شد ✓');
                 }}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-1.5"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-3 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
               >
-                <Copy className="w-3.5 h-3.5" /> کپی شماره کارت
+                <Copy className="w-4 h-4" /> کپی شماره کارت بانکی
               </button>
             </div>
 
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-[11px] text-emerald-300 text-center leading-relaxed">
-              ⏳ همین‌جا منتظر بمانید؛ پس از واریز وجه، سیستم به صورت خودکار پرداخت شما را شناسایی و تایید می‌کند.
+              ✨ سیستم به صورت خودکار پیامک بانکی را بررسی کرده و پس از واریز، نوبت شما را قطعی می‌کند. همین‌جا منتظر بمانید.
             </div>
 
             <button
@@ -542,176 +603,6 @@ export default function BookingPage() {
             >
               بازگشت به سایت
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* ۲. رسید ثبت نوبت موفقیت‌آمیز */}
-      {receipt && (
-        <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-emerald-500/40 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative text-center">
-            
-            <button
-              onClick={() => { setReceipt(null); setSelectedStartTime(null); }}
-              className="absolute top-4 left-4 p-2 text-slate-300 hover:text-white rounded-xl bg-white/10 transition z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
-            
-            <div>
-              <h3 className="text-base font-black text-white">
-                {getFirstName(receipt.customer_name)} عزیز، نوبت شما با موفقیت ثبت شد! 🎉
-              </h3>
-              <p className="text-[11px] text-emerald-300 mt-1 font-bold">
-                مشخصات رزرو در سالن پیرایش الف:
-              </p>
-            </div>
-            
-            <div className={`text-xs space-y-2.5 ${c.innerCard} border border-white/10 p-4 rounded-2xl text-right`}>
-              <div className="flex justify-between">
-                <span className={c.muted}>نام مراجع:</span>
-                <span className="font-bold text-white">{receipt.customer_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>آرایشگر:</span>
-                <span className="font-bold text-blue-400">{receipt.operator_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>تاریخ نوبت:</span>
-                <span className="font-mono font-bold">{receipt.date}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>ساعت حضور:</span>
-                <span className="font-mono text-emerald-400 font-black text-sm">از {receipt.start_time} تا حدود {receipt.end_time}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>کد پیگیری تراکنش:</span>
-                <span className="font-mono text-amber-400 font-bold tracking-wider">{receipt.ref_id}</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={copyAppointmentText}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <Copy className="w-3.5 h-3.5 text-blue-400" />
-                {copiedNote ? 'کپی شد ✓' : 'کپی مشخصات'}
-              </button>
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(`نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}`)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <Share2 className="w-3.5 h-3.5" /> واتساپ
-              </a>
-            </div>
-
-            <button
-              onClick={() => { setReceipt(null); setSelectedStartTime(null); }}
-              className="text-xs text-blue-400 hover:underline font-bold block mx-auto pt-1"
-            >
-              بستن و رزرو نوبت جدید
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ۳. پنجره لغو نوبت توسط مشتری با کد سفارش */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-rose-500/30 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative">
-            <button
-              onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }}
-              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {!cancelSuccessData ? (
-              <form onSubmit={handleCustomerCancelBooking} className="space-y-4">
-                <div className="flex items-center gap-2.5 border-b border-slate-800 pb-3">
-                  <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-white">لغو نوبت رزرو شده</h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">آزادسازی فوری تایم برای دیگران</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                    کد پیگیری یا شماره سفارش نوبت:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: TCO-1234"
-                    value={cancelRefInput}
-                    onChange={(e) => setCancelRefInput(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 text-white text-xs p-3 rounded-xl font-mono text-center uppercase tracking-widest focus:outline-none"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowCancelModal(false)}
-                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
-                  >
-                    انصراف
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isCanceling}
-                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-1.5"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {isCanceling ? 'در حال لغو...' : 'تأیید و لغو نوبت'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-4 text-center py-2 animate-fadeIn">
-                <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
-                <div>
-                  <h3 className="text-base font-black text-white">نوبت شما با موفقیت لغو شد</h3>
-                  <p className="text-[11px] text-slate-300 mt-1 font-mono">
-                    تاریخ {cancelSuccessData.date} ساعت {cancelSuccessData.time} آزاد گردید.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-200 text-right space-y-2 leading-relaxed">
-                  <p className="font-bold text-white flex items-center gap-1.5">
-                    <Phone className="w-4 h-4 text-emerald-400 shrink-0" /> هماهنگی عودت وجه:
-                  </p>
-                  <p>
-                    برای هماهنگی عودت وجه، لطفاً با آرایشگر خود (<strong>{cancelSuccessData.operator_name}</strong>) تماس بگیرید:
-                  </p>
-                  <div className="pt-1 text-center">
-                    <a
-                      href={`tel:${cancelSuccessData.operator_phone}`}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-mono font-black rounded-xl text-xs shadow-md"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      <span>{cancelSuccessData.operator_phone}</span>
-                    </a>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
-                >
-                  بستن پنجره
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
