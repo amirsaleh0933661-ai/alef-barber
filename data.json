@@ -134,6 +134,24 @@
   ],
   "bookings": [
     {
+      "id": "bk_1794938949200",
+      "operator_id": 1,
+      "operator_name": "فرزاد",
+      "date": "1405/08/26",
+      "start_time": "22:00",
+      "end_time": "22:45",
+      "duration": 45,
+      "customer_name": "ali",
+      "customer_phone": "09123456789",
+      "services": [
+        "اصلاح کلاسیک و فید تخصصی"
+      ],
+      "discount_applied": null,
+      "amount": 200000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-17T18:09:09.520Z"
+    },
+    {
       "id": "bk_1794934757701",
       "operator_id": 1,
       "operator_name": "فرزاد",

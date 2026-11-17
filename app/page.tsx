@@ -183,12 +183,7 @@ export default function BookingPage() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelRefInput, setCancelRefInput] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
-  const [cancelSuccessData, setCancelSuccessData] = useState<{
-    operator_name: string;
-    operator_phone: string;
-    date: string;
-    time: string;
-  } | null>(null);
+  const [cancelSuccessData, setCancelSuccessData] = useState<any>(null);
 
   const [clientTheme, setClientTheme] = useState<'dark' | 'light'>('dark');
 
@@ -225,12 +220,9 @@ export default function BookingPage() {
   useEffect(() => {
     const days = getShamsiNext7Days();
     setShamsiDays(days);
-    if (days.length > 0) {
-      setSelectedDate(days[0].date);
-    }
+    if (days.length > 0) setSelectedDate(days[0].date);
     const n = new Date();
     setCurrentTotalMins(n.getHours() * 60 + n.getMinutes());
-
     loadData();
 
     const userAgent = window.navigator.userAgent.toLowerCase();
@@ -245,9 +237,7 @@ export default function BookingPage() {
     const isApp = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
     const seen = sessionStorage.getItem('seen_welcome_glass');
     if (!seen && !isApp) {
-      const timer = setTimeout(() => {
-        setWelcomeStep(1);
-      }, 700);
+      const timer = setTimeout(() => setWelcomeStep(1), 700);
       return () => clearTimeout(timer);
     }
 
@@ -273,7 +263,6 @@ export default function BookingPage() {
   };
 
   const isDark = clientTheme === 'dark';
-
   const c = {
     bg: isDark ? 'bg-[#090d16]' : 'bg-[#f8fafc]',
     text: isDark ? 'text-slate-100' : 'text-slate-800',
@@ -281,8 +270,7 @@ export default function BookingPage() {
     innerCard: isDark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200',
     input: isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900',
     muted: isDark ? 'text-slate-400' : 'text-slate-500',
-    buttonSelected: 'bg-blue-600 border-blue-500 text-white shadow-lg ring-2 ring-blue-400/40',
-    btnPrimary: 'bg-emerald-600 hover:bg-emerald-500 text-white'
+    buttonSelected: 'bg-blue-600 border-blue-500 text-white shadow-lg ring-2 ring-blue-400/40'
   };
 
   const availableBarbers = (db.operators || []).filter((o: any) => o.role !== 'developer');
@@ -297,41 +285,26 @@ export default function BookingPage() {
 
   let discountAmount = 0;
   if (appliedDiscount) {
-    if (appliedDiscount.type === 'fixed') {
-      discountAmount = Math.min(subtotalPrice, appliedDiscount.value);
-    } else {
-      discountAmount = Math.round((subtotalPrice * appliedDiscount.value) / 100);
-    }
+    discountAmount = appliedDiscount.type === 'fixed' ? Math.min(subtotalPrice, appliedDiscount.value) : Math.round((subtotalPrice * appliedDiscount.value) / 100);
   }
 
   const finalPrice = Math.max(0, subtotalPrice - discountAmount);
   const estimatedEndTime = selectedStartTime ? minsToTime(timeToMins(selectedStartTime) + totalDuration) : '';
   const currentOpPortfolios = (db.portfolios || []).filter((p: any) => p.operator_id === operatorId);
 
-  const isSelectedDateOff = (db.off_days || []).some(
-    (o: any) => o.operator_id === operatorId && o.date === selectedDate
-  );
-
-  const opIntervalsForDay = (db.intervals || []).filter(
-    (it: any) => it.operator_id === operatorId && it.date === selectedDate
-  );
-
-  const dayBookings = (db.bookings || []).filter(
-    (b: any) => b.operator_id === operatorId && b.date === selectedDate
-  );
-
+  const isSelectedDateOff = (db.off_days || []).some((o: any) => o.operator_id === operatorId && o.date === selectedDate);
+  const opIntervalsForDay = (db.intervals || []).filter((it: any) => it.operator_id === operatorId && it.date === selectedDate);
+  const dayBookings = (db.bookings || []).filter((b: any) => b.operator_id === operatorId && b.date === selectedDate);
   const isSelectedDateToday = shamsiDays.length > 0 && selectedDate === shamsiDays[0]?.date;
-  const availableStartSlots: { time: string; available: boolean }[] = [];
 
+  const availableStartSlots: { time: string; available: boolean }[] = [];
   if (!isSelectedDateOff) {
     opIntervalsForDay.forEach((interval: any) => {
       const startM = timeToMins(interval.start_time);
       const endM = timeToMins(interval.end_time);
-
       for (let t = startM; t < endM; t += 30) {
         const candidateStart = t;
         const timeStr = minsToTime(candidateStart);
-
         if (isSelectedDateToday && currentTotalMins > 0 && candidateStart <= currentTotalMins) continue;
         if (availableStartSlots.some(s => s.time === timeStr)) continue;
 
@@ -344,14 +317,9 @@ export default function BookingPage() {
             break;
           }
         }
-
-        availableStartSlots.push({
-          time: timeStr,
-          available: !hasConflict
-        });
+        availableStartSlots.push({ time: timeStr, available: !hasConflict });
       }
     });
-
     availableStartSlots.sort((a, b) => a.time.localeCompare(b.time));
   }
 
@@ -369,16 +337,12 @@ export default function BookingPage() {
     e.preventDefault();
     const clean = discountInput.trim().toUpperCase();
     if (!clean) return;
-
     const found = (db.discounts || []).find((d: any) => d.code === clean && d.active);
     if (found) {
       const dType = found.type || 'percent';
       const dVal = Number(found.value ?? found.percent);
       setAppliedDiscount({ code: found.code, type: dType, value: dVal });
-      const desc = dType === 'fixed'
-        ? `تخفیف ${dVal.toLocaleString('fa-IR')} تومانی اعمال شد.`
-        : `تخفیف ${dVal}٪ اعمال شد.`;
-      setDiscountMsg({ type: 'ok', text: desc });
+      setDiscountMsg({ type: 'ok', text: 'کد تخفیف اعمال شد.' });
     } else {
       setAppliedDiscount(null);
       setDiscountMsg({ type: 'err', text: 'کد تخفیف معتبر نیست.' });
@@ -387,27 +351,8 @@ export default function BookingPage() {
 
   const handleProceedPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSelectedDateOff) {
-      showToast(`${currentOp?.name} در این روز نوبت‌دهی ندارد.`);
-      return;
-    }
-    if (!name.trim()) {
-      showToast('لطفاً نام و نام خانوادگی خود را وارد کنید.');
-      return;
-    }
-
-    const mobileRegex = /^09[0-9]{9}$/;
-    if (!mobileRegex.test(phone.trim())) {
-      showToast('شماره تماس نامعتبر است! لطفاً شماره موبایل ۱۱ رقمی وارد کنید.');
-      return;
-    }
-
-    if (!selectedStartTime) {
-      showToast('لطفاً ساعت نوبت را انتخاب کنید.');
-      return;
-    }
-    if (selectedServices.length === 0) {
-      showToast('حداقل یک خدمت باید انتخاب شود.');
+    if (!name.trim() || !phone.trim() || !selectedStartTime || selectedServices.length === 0) {
+      showToast('لطفاً تمامی اطلاعات را کامل وارد کنید.');
       return;
     }
 
@@ -439,78 +384,73 @@ export default function BookingPage() {
 
       if (result.success && result.card_number) {
         setCustomInvoice(result);
-        showToast('فاکتور کارت‌به‌کارت با موفقیت ایجاد شد.');
+        showToast('فاکتور پرداخت صادر شد.');
       } else {
-        showToast(result.error || 'خطا در صدور فاکتور تیکارت');
+        showToast(result.error || 'خطا در صدور فاکتور');
       }
     } catch {
       setIsSubmitting(false);
       showToast('خطای ارتباط با سرور');
     }
   };
-  
-  const handleCustomerCancelBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanCode = cancelRefInput.trim().toUpperCase();
-    if (!cleanCode) {
-      showToast('لطفاً کد رهگیری سفارش را وارد کنید.');
-      return;
-    }
 
-    setIsCanceling(true);
+  // تعریف تابع تایید دستی پرداخت برای رفع خطای بیلد ورسل
+  const handleCheckPaymentStatus = async () => {
+    if (!customInvoice?.tracking_code) return;
     try {
       const res = await fetch('/api/booking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'cancel_booking_by_customer',
-          code: cleanCode
+          action: 'confirm_paid_booking',
+          tracking_code: customInvoice.tracking_code
         })
       });
-
       const result = await res.json();
-      setIsCanceling(false);
-
       if (result.success) {
-        setCancelSuccessData({
-          operator_name: result.operator_name,
-          operator_phone: result.operator_phone,
-          date: result.date,
-          time: result.time
-        });
+        setReceipt(result.booking);
+        setCustomInvoice(null);
+        showToast('پرداخت تایید شد و نوبت قطعی گردید ✓');
         loadData();
       } else {
-        showToast(result.error || 'کد رهگیری یافت نشد.');
+        showToast('هنوز تاییدیه ثبت نشده است.');
+      }
+    } catch {
+      showToast('خطا در بررسی وضعیت');
+    }
+  };
+
+  const handleCustomerCancelBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanCode = cancelRefInput.trim().toUpperCase();
+    if (!cleanCode) return;
+    setIsCanceling(true);
+    try {
+      const res = await fetch('/api/booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel_booking_by_customer', code: cleanCode })
+      });
+      const result = await res.json();
+      setIsCanceling(false);
+      if (result.success) {
+        setCancelSuccessData(result);
+        loadData();
+      } else {
+        showToast(result.error || 'کد یافت نشد.');
       }
     } catch {
       setIsCanceling(false);
-      showToast('خطا در برقراری ارتباط با سرور');
+      showToast('خطا در ارتباط با سرور');
     }
   };
 
   const copyAppointmentText = () => {
     if (!receipt) return;
-    const text = `نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما با موفقیت ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}`;
+    const text = `نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}`;
     navigator.clipboard.writeText(text);
     setCopiedNote(true);
     setTimeout(() => setCopiedNote(false), 2500);
-  };
-
-  const closeWelcomeModal = () => {
-    sessionStorage.setItem('seen_welcome_glass', 'true');
-    setWelcomeStep(null);
-  };
-
-  const triggerPwaInstall = () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then(() => {
-        closeWelcomeModal();
-      });
-    } else {
-      alert('برای نصب برنامه: از منوی سه‌نقطه بالای مرورگر، گزینه «افزودن به صفحه اصلی» را بزنید.');
-      closeWelcomeModal();
-    }
   };
 
   return (
@@ -525,177 +465,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* ۱. رسید ثبت نوبت موفقیت‌آمیز */}
-      {receipt && (
-        <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-emerald-500/40 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative text-center">
-            
-            <button
-              onClick={() => { setReceipt(null); setSelectedStartTime(null); }}
-              className="absolute top-4 left-4 p-2 text-slate-300 hover:text-white rounded-xl bg-white/10 transition z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
-            
-            <div>
-              <h3 className="text-base font-black text-white">
-                {getFirstName(receipt.customer_name)} عزیز، نوبت شما با موفقیت ثبت شد! 🎉
-              </h3>
-              <p className="text-[11px] text-emerald-300 mt-1 font-bold">
-                مشخصات رزرو در سالن پیرایش الف:
-              </p>
-            </div>
-            
-            <div className={`text-xs space-y-2.5 ${c.innerCard} border border-white/10 p-4 rounded-2xl text-right`}>
-              <div className="flex justify-between">
-                <span className={c.muted}>نام مراجع:</span>
-                <span className="font-bold text-white">{receipt.customer_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>آرایشگر:</span>
-                <span className="font-bold text-blue-400">{receipt.operator_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>تاریخ نوبت:</span>
-                <span className="font-mono font-bold">{receipt.date}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>ساعت حضور:</span>
-                <span className="font-mono text-emerald-400 font-black text-sm">از {receipt.start_time} تا حدود {receipt.end_time}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={c.muted}>کد پیگیری تراکنش:</span>
-                <span className="font-mono text-amber-400 font-bold tracking-wider">{receipt.ref_id}</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={copyAppointmentText}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <Copy className="w-3.5 h-3.5 text-blue-400" />
-                {copiedNote ? 'کپی شد ✓' : 'کپی مشخصات'}
-              </button>
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(`نوبت سالن پیرایش الف\n${getFirstName(receipt.customer_name)} عزیز، نوبت شما ثبت شد:\nآرایشگر: ${receipt.operator_name}\nتاریخ: ${receipt.date}\nساعت: ${receipt.start_time}\nکد پیگیری: ${receipt.ref_id}`)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <Share2 className="w-3.5 h-3.5" /> واتساپ
-              </a>
-            </div>
-
-            <button
-              onClick={() => { setReceipt(null); setSelectedStartTime(null); }}
-              className="text-xs text-blue-400 hover:underline font-bold block mx-auto pt-1"
-            >
-              بستن و رزرو نوبت جدید
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ۲. پنجره لغو نوبت توسط مشتری با کد سفارش */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-2xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-rose-500/30 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative">
-            <button
-              onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }}
-              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {!cancelSuccessData ? (
-              <form onSubmit={handleCustomerCancelBooking} className="space-y-4">
-                <div className="flex items-center gap-2.5 border-b border-slate-800 pb-3">
-                  <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-white">لغو نوبت رزرو شده</h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">آزادسازی فوری تایم برای دیگران</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                    کد پیگیری یا شماره سفارش نوبت:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: TCO-1234"
-                    value={cancelRefInput}
-                    onChange={(e) => setCancelRefInput(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 text-white text-xs p-3 rounded-xl font-mono text-center uppercase tracking-widest focus:outline-none"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowCancelModal(false)}
-                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
-                  >
-                    انصراف
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isCanceling}
-                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-1.5"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {isCanceling ? 'در حال لغو...' : 'تأیید و لغو نوبت'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-4 text-center py-2 animate-fadeIn">
-                <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
-                <div>
-                  <h3 className="text-base font-black text-white">نوبت شما با موفقیت لغو شد</h3>
-                  <p className="text-[11px] text-slate-300 mt-1 font-mono">
-                    تاریخ {cancelSuccessData.date} ساعت {cancelSuccessData.time} آزاد گردید.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-200 text-right space-y-2 leading-relaxed">
-                  <p className="font-bold text-white flex items-center gap-1.5">
-                    <Phone className="w-4 h-4 text-emerald-400 shrink-0" /> هماهنگی عودت وجه:
-                  </p>
-                  <p>
-                    برای هماهنگی عودت وجه، لطفاً با آرایشگر خود (<strong>{cancelSuccessData.operator_name}</strong>) تماس بگیرید:
-                  </p>
-                  <div className="pt-1 text-center">
-                    <a
-                      href={`tel:${cancelSuccessData.operator_phone}`}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-mono font-black rounded-xl text-xs shadow-md"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      <span>{cancelSuccessData.operator_phone}</span>
-                    </a>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
-                >
-                  بستن پنجره
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ۳. صفحه پرداخت اختصاصی خفن با تایمر خطی، ریال/تومان و دکمه بررسی */}
+      {/* صفحه پرداخت اختصاصی خفن با تایمر خطی و ریال/تومان */}
       {customInvoice && (
         <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-3xl flex items-center justify-center p-4 animate-fadeIn">
           <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-[0_0_50px_rgba(245,158,11,0.15)] space-y-5 relative">
@@ -778,7 +548,6 @@ export default function BookingPage() {
               </button>
             </div>
 
-            {/* دکمه بررسی و تایید دستی پرداخت برای رفع مشکل ماندن روی تایمر */}
             <button
               onClick={handleCheckPaymentStatus}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2"
@@ -1093,105 +862,6 @@ export default function BookingPage() {
             </button>
           </form>
         )}
-      </div>
-
-      {/* بخش نمونه‌کارها */}
-      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 space-y-4 shadow-xl mb-6`}>
-        <div className="flex items-center justify-between border-b pb-3 border-slate-700/40">
-          <div className="flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-purple-500" />
-            <h2 className="text-sm font-black">نمونه‌کارهای {currentOp?.name}:</h2>
-          </div>
-          <span className="text-[11px] text-slate-400 font-mono">{currentOpPortfolios.length} اثر</span>
-        </div>
-
-        {currentOpPortfolios.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-6">هنوز تصویری برای این آرایشگر ثبت نشده است.</p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {currentOpPortfolios.map((port: any) => (
-              <div key={port.id} className="rounded-2xl overflow-hidden border border-slate-700/60 bg-black/40 shadow group">
-                <div className="w-full h-32 overflow-hidden bg-slate-800">
-                  <img 
-                    src={port.image} 
-                    alt={port.title} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
-                  />
-                </div>
-                <p className="text-[11px] font-bold p-2 text-center truncate text-slate-200">{port.title}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* بخش کارت شیشه‌ای و دکمه‌های ارتباطی */}
-      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 space-y-5 shadow-xl`}>
-        <div className="space-y-1 text-center border-b pb-3 border-slate-700/40">
-          <h3 className="text-sm font-black text-slate-100">نشانی و ارتباط با {db.salon_info?.name || 'سالن پیرایش الف'}</h3>
-          <p className="text-[11px] text-slate-400">اطلاعات حضوری و ارتباط مستقیم با {currentOp?.name}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-white/[0.04] dark:bg-black/40 backdrop-blur-xl border border-white/15 dark:border-white/10 shadow-xl text-right space-y-3.5">
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0 mt-0.5">
-              <MapPin className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block mb-0.5">آدرس حضوری سالن الف:</span>
-              <p className="text-xs font-bold text-slate-200 leading-relaxed">
-                {db.salon_info?.address || 'آدرس ثبت نشده است'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 pt-3 border-t border-white/10">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-              <Phone className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block mb-0.5">
-                شماره تماس مستقیم {currentOp?.name}:
-              </span>
-              <a 
-                href={activePhoneNumber ? `tel:${activePhoneNumber}` : '#'} 
-                className="text-xs font-mono font-black text-emerald-400 hover:underline"
-              >
-                {activePhoneNumber || 'ثبت نشده'}
-              </a>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 pt-1">
-          <a
-            href={db.salon_info?.instagram ? `https://instagram.com/${db.salon_info.instagram}` : '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="py-3 px-2 rounded-2xl bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg hover:opacity-95 transition"
-          >
-            <InstagramSvg className="w-5 h-5" />
-            <span>پیج اینستاگرام</span>
-          </a>
-
-          <a
-            href={activePhoneNumber ? `tel:${activePhoneNumber}` : '#'}
-            className="py-3 px-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg transition"
-          >
-            <Phone className="w-5 h-5" />
-            <span>تماس مستقیم</span>
-          </a>
-
-          <a
-            href={db.salon_info?.map_url || '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="py-3 px-2 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg transition"
-          >
-            <MapPin className="w-5 h-5" />
-            <span>مسیریابی نقشه</span>
-          </a>
-        </div>
       </div>
 
     </main>
