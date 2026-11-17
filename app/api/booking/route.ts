@@ -153,7 +153,6 @@ async function saveDb(data: any) {
 
 export async function GET(req: Request) {
   const db = await getDb();
-  // فقط نوبت‌هایی که پرداخت شده‌اند (PAID) به کلاینت و آرایشگر ارسال می‌شوند
   const filteredDb = {
     ...db,
     bookings: (db.bookings || []).filter((b: any) => b.payment_status === 'PAID')
@@ -213,7 +212,6 @@ export async function POST(req: Request) {
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      // ثبت اولیه با وضعیت PENDING_PAYMENT و فیلد ref_id اختیاری برای جلوگیری از خطای TypeScript
       const pendingBooking: {
         id: any;
         operator_id: number;
@@ -253,8 +251,8 @@ export async function POST(req: Request) {
 
       const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
       const host = req.headers.get('host') || 'alef-barber.vercel.app';
-      // همیشه https را اجبار می‌کنیم تا خطای تیکارت برطرف شود
-      const protocol = 'https';
+      const protocol = 'https'; // اجبار اکید به https برای جلوگیری از خطای تیکارت
+      const baseUrl = `${protocol}://${host}`;
 
       try {
         const tcartRes = await fetch('https://tcartt.com/api/v1/invoices', {
@@ -269,8 +267,8 @@ export async function POST(req: Request) {
             title: `رزرو نوبت سالن الف - ${barberName}`,
             external_order_id: booking_id,
             buyer_ref: customer_phone,
-            return_url: `${protocol}/?payment_status=success&booking_id=${booking_id}`,
-            callback_url: `${protocol}/api/payment`,
+            return_url: `${baseUrl}/?payment_status=success&booking_id=${booking_id}`,
+            callback_url: `${baseUrl}/api/payment`, // اصلاح کامل آدرس با https
             expires_minutes: 5 // مهلت پرداخت دقیقاً ۵ دقیقه
           })
         });
