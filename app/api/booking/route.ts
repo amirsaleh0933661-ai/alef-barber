@@ -5,7 +5,6 @@ import Redis from 'ioredis';
 
 const dbPath = path.join(process.cwd(), 'data.json');
 
-// شناسایی متغیر دیتابیس ورسل
 const redisUrl = process.env.STORAGE_URL || process.env.REDIS_URL || process.env.KV_URL;
 let redisClient: Redis | null = null;
 
@@ -73,7 +72,8 @@ const defaultData = {
     welcome_text: 'تجربه‌ای متمایز از استایل و پیرایش حرفه‌ای. لطفاً خدمات و زمان مدنظرتان را رزرو کنید.',
     install_prompt_text: 'اگه نمی‌خوای هرسری دنبال لینک نگردی، برنامه رو نصب کن تا با یک لمس همیشه روی صفحه گوشیت باشه!',
     arrival_rule: 'زمان نوبت تقریبی است؛ لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن الف حضور داشته باشید.',
-    cancellation_rule: 'در صورت انصراف یا نیاز به جابجایی ساعت، لطفاً حداقل ۳ ساعت قبل اطلاع دهید تا حق نوبت سایر مراجعین محفوظ بماند.'
+    cancellation_rule: 'در صورت انصراف یا نیاز به جابجایی ساعت، لطفاً حداقل ۳ ساعت قبل اطلاع دهید تا حق نوبت سایر مراجعین محفوظ بماند.',
+    tcart_api_key: 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
   },
   operators: [
     { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber', merchant_id: '' },
@@ -130,7 +130,6 @@ async function getDb() {
     memoryDb = defaultData;
   }
 
-  // ثبت اولیه در دیتابیس ابری
   if (client && memoryDb) {
     try {
       await client.set('alef_barber_db', JSON.stringify(memoryDb));
@@ -157,9 +156,7 @@ async function saveDb(data: any) {
 
   try {
     fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {
-    // در سیستم فایل فقط‌خواندنی ورسل نادیده گرفته می‌شود
-  }
+  } catch (err) {}
 }
 
 export async function GET(req: Request) {
@@ -220,110 +217,131 @@ export async function POST(req: Request) {
         welcome_text: body.welcome_text?.trim() || '',
         install_prompt_text: body.install_prompt_text?.trim() || '',
         arrival_rule: body.arrival_rule?.trim() || '',
-        cancellation_rule: body.cancellation_rule?.trim() || ''
+        cancellation_rule: body.cancellation_rule?.trim() || '',
+        tcart_api_key: body.tcart_api_key?.trim() || db.salon_info?.tcart_api_key || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
       };
       await saveDb(db);
       return NextResponse.json({ success: true, salon_info: db.salon_info });
     }
 
-    if (body.action === 'update_operator_merchant') {
-      const opId = Number(body.operator_id);
-      const op = db.operators.find((o: any) => o.id === opId);
-      if (!op) return NextResponse.json({ error: 'آرایشگر یافت نشد.' }, { status: 404 });
-
-      op.merchant_id = body.merchant_id?.trim() || '';
-      await saveDb(db);
-      const isConnected = op.merchant_id.length >= 30;
-      return NextResponse.json({ success: true, is_connected: isConnected, merchant_id: op.merchant_id });
-    }
-
-    if (body.action === 'request_gateway_payment') {
+    if (body.action === 'request_card_payment' || body.action === 'request_gateway_payment') {
       const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount, callback_url } = body;
       const opId = Number(operator_id) || 1;
       const op = db.operators.find((o: any) => o.id === opId);
       const barberName = op?.name || 'آرایشگر';
-      const merchantId = op?.merchant_id?.trim();
 
       const bookingId = 'bk_' + Date.now();
       const reqStartMins = timeToMins(start_time);
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      if (merchantId && merchantId.length >= 30) {
+      const pendingBooking = {
+        id: bookingId,
+        operator_id: opId,
+        operator_name: barberName,
+        date,
+        start_time,
+        end_time: reqEndTime,
+        duration: Number(total_duration),
+        customer_name,
+        customer_phone,
+        services: services || [],
+        discount_applied: discount_code || null,
+        amount: Number(amount),
+        payment_status: 'PENDING_PAYMENT',
+        created_at: new Date().toISOString()
+      };
+
+      db.bookings = db.bookings || [];
+      db.bookings.unshift(pendingBooking);
+      await saveDb(db);
+
+      const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
+      const host = req.headers.get('host') || 'localhost:3000';
+      const protocol = host.includes('localhost') ? 'http' : 'https';
+      const dynamicCallbackUrl = `${protocol}://${host}/api/payment`;
+
+      try {
+        console.log('--- ارسال فاکتور به تیکارت ---');
+        const tcartRes = await fetch('https://tcartt.com/api/v1/invoices', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${tcartApiKey}`,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            amount_toman: Number(amount),
+            title: `رزرو نوبت سالن الف - ${barberName}`,
+            external_order_id: bookingId,
+            buyer_ref: customer_phone,
+            return_url: `${protocol}://${host}/?payment_status=success&booking_id=${bookingId}`,
+            callback_url: dynamicCallbackUrl,
+            expires_minutes: 30
+          })
+        });
+
+        const rawText = await tcartRes.text();
+        let tcartData;
         try {
-          const finalCallback = callback_url || `https://alef-barber.vercel.app/api/payment/callback?booking_id=${bookingId}`;
-          const zarinpalRes = await fetch('https://payment.zarinpal.com/pg/v4/payment/request.json', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({
-              merchant_id: merchantId,
-              amount: Number(amount),
-              currency: 'IRT',
-              description: `رزرو نوبت سالن الف - ${barberName} برای ${customer_name}`,
-              callback_url: finalCallback,
-              metadata: { mobile: customer_phone, order_id: bookingId }
-            })
+          tcartData = JSON.parse(rawText);
+        } catch (e) {
+          console.error('پاسخ غیر-JSON از تیکارت:', rawText);
+          return NextResponse.json({
+            success: false,
+            error: 'پاسخ نامعتبر از سرور تیکارت (کلید API، اشتراک یا کارت بانکی خود را بررسی کنید)'
           });
-
-          const zpData = await zarinpalRes.json();
-          if (zpData.data && zpData.data.code === 100) {
-            const authority = zpData.data.authority;
-            const pendingBooking = {
-              id: bookingId,
-              authority,
-              operator_id: opId,
-              operator_name: barberName,
-              date,
-              start_time,
-              end_time: reqEndTime,
-              duration: Number(total_duration),
-              customer_name,
-              customer_phone,
-              services: services || [],
-              discount_applied: discount_code || null,
-              amount: Number(amount),
-              payment_status: 'PENDING_PAYMENT',
-              created_at: new Date().toISOString()
-            };
-            db.bookings = db.bookings || [];
-            db.bookings.unshift(pendingBooking);
-            await saveDb(db);
-
-            return NextResponse.json({
-              success: true,
-              is_real_gateway: true,
-              payment_url: `https://payment.zarinpal.com/pg/StartPay/${authority}`,
-              authority
-            });
-          }
-        } catch (zarinErr) {
-          console.error('خطای ارتباط با زرین‌پال:', zarinErr);
         }
-      }
 
-      return NextResponse.json({
-        success: true,
-        is_real_gateway: false
-      });
+        console.log('پاسخ تیکارت:', tcartData);
+
+        if (tcartRes.ok && tcartData && tcartData.payment_url) {
+          return NextResponse.json({
+            success: true,
+            is_real_gateway: true,
+            payment_url: tcartData.payment_url,
+            booking_id: bookingId
+          });
+        } else {
+          return NextResponse.json({
+            success: false,
+            error: tcartData.error || tcartData.message || 'خطا در صدور فاکتور در تیکارت (کلید API را بررسی کنید)'
+          });
+        }
+      } catch (err: any) {
+        console.error('خطای ارتباط با تیکارت:', err);
+        return NextResponse.json({
+          success: false,
+          error: 'خطای شبکه در اتصال به تیکارت: ' + err.message
+        });
+      }
+    }
+
+    if (body.action === 'confirm_paid_booking') {
+      const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id);
+      if (booking) {
+        booking.payment_status = 'PAID';
+        booking.ref_id = body.transaction_ref || ('TCART-' + Math.floor(10000000 + Math.random() * 90000000));
+        await saveDb(db);
+        return NextResponse.json({ success: true, booking });
+      }
+      return NextResponse.json({ error: 'سفارش یافت نشد' }, { status: 404 });
     }
 
     if (body.action === 'add_operator') {
-      const { name, username, password, phone, merchant_id } = body;
+      const { name, username, password, phone } = body;
       const cleanUser = username.trim().toLowerCase();
       if (db.operators.some((o: any) => o.username.toLowerCase() === cleanUser)) {
         return NextResponse.json({ error: 'این نام کاربری قبلاً ثبت شده است.' }, { status: 400 });
       }
-
       const newOp = {
         id: Date.now(),
         name: name.trim(),
         username: cleanUser,
         password: password.trim(),
         phone: phone?.trim() || '',
-        merchant_id: merchant_id?.trim() || '',
         role: 'barber'
       };
-
       db.operators.push(newOp);
       await saveDb(db);
       return NextResponse.json({ success: true, operator: newOp });
@@ -331,13 +349,8 @@ export async function POST(req: Request) {
 
     if (body.action === 'delete_operator') {
       const opId = Number(body.operator_id);
-      if (opId === 99) {
-        return NextResponse.json({ error: 'حذف اکانت اصلی برنامه‌نویس امکان‌پذیر نیست.' }, { status: 403 });
-      }
+      if (opId === 99) return NextResponse.json({ error: 'امکان حذف مدیر کل نیست.' }, { status: 403 });
       db.operators = (db.operators || []).filter((o: any) => o.id !== opId);
-      db.services = (db.services || []).filter((s: any) => s.operator_id !== opId);
-      db.portfolios = (db.portfolios || []).filter((p: any) => p.operator_id !== opId);
-      db.intervals = (db.intervals || []).filter((i: any) => i.operator_id !== opId);
       await saveDb(db);
       return NextResponse.json({ success: true });
     }
@@ -366,7 +379,7 @@ export async function POST(req: Request) {
       const newPortfolio = {
         id: 'port_' + Date.now(),
         operator_id: Number(body.operator_id) || 1,
-        title: body.title?.trim() || 'نمونه‌کار پیرایش الف',
+        title: body.title?.trim() || 'نمونه‌کار',
         image: body.image
       };
       db.portfolios = db.portfolios || [];
@@ -462,39 +475,6 @@ export async function POST(req: Request) {
       db.bookings = (db.bookings || []).filter((b: any) => b.id !== body.booking_id);
       await saveDb(db);
       return NextResponse.json({ success: true });
-    }
-
-    if (body.action === 'confirm_paid_booking') {
-      const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount, transaction_ref } = body;
-      const opId = Number(operator_id) || 1;
-      const reqStartMins = timeToMins(start_time);
-      const reqEndMins = reqStartMins + Number(total_duration);
-      const reqEndTime = minsToTime(reqEndMins);
-
-      const op = db.operators.find((o: any) => o.id === opId);
-      const newBooking = {
-        id: 'bk_' + Date.now(),
-        operator_id: opId,
-        operator_name: op?.name || 'آرایشگر',
-        date,
-        start_time,
-        end_time: reqEndTime,
-        duration: Number(total_duration),
-        customer_name,
-        customer_phone,
-        services: services || [],
-        discount_applied: discount_code || null,
-        amount: Number(amount),
-        ref_id: transaction_ref || ('SHP-' + Math.floor(10000000 + Math.random() * 90000000)),
-        payment_status: 'PAID',
-        created_at: new Date().toISOString()
-      };
-
-      db.bookings = db.bookings || [];
-      db.bookings.unshift(newBooking);
-      await saveDb(db);
-
-      return NextResponse.json({ success: true, booking: newBooking });
     }
 
     return NextResponse.json({ error: 'عملیات نامعتبر' }, { status: 400 });

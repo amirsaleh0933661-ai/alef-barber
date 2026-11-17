@@ -132,7 +132,98 @@
       "is_booked": true
     }
   ],
-  "bookings": [],
+  "bookings": [
+    {
+      "id": "bk_1794928764622",
+      "operator_id": 1,
+      "operator_name": "فرزاد",
+      "date": "1405/08/26",
+      "start_time": "22:30",
+      "end_time": "23:15",
+      "duration": 45,
+      "customer_name": "علی",
+      "customer_phone": "09013235654",
+      "services": [
+        "اصلاح کلاسیک و فید تخصصی"
+      ],
+      "discount_applied": null,
+      "amount": 200000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-17T15:19:24.622Z"
+    },
+    {
+      "id": "bk_1794928355987",
+      "operator_id": 1,
+      "operator_name": "فرزاد",
+      "date": "1405/08/26",
+      "start_time": "21:30",
+      "end_time": "22:15",
+      "duration": 45,
+      "customer_name": "علی",
+      "customer_phone": "09012344321",
+      "services": [
+        "اصلاح کلاسیک و فید تخصصی"
+      ],
+      "discount_applied": null,
+      "amount": 200000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-17T15:12:35.987Z"
+    },
+    {
+      "id": "bk_1794928179306",
+      "operator_id": 1,
+      "operator_name": "فرزاد",
+      "date": "1405/08/26",
+      "start_time": "21:30",
+      "end_time": "22:15",
+      "duration": 45,
+      "customer_name": "علی",
+      "customer_phone": "09012344321",
+      "services": [
+        "اصلاح کلاسیک و فید تخصصی"
+      ],
+      "discount_applied": null,
+      "amount": 200000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-17T15:09:39.307Z"
+    },
+    {
+      "id": "bk_1794927905721",
+      "operator_id": 1,
+      "operator_name": "فرزاد",
+      "date": "1405/08/26",
+      "start_time": "19:30",
+      "end_time": "20:15",
+      "duration": 45,
+      "customer_name": "مجید",
+      "customer_phone": "09876543210",
+      "services": [
+        "اصلاح کلاسیک و فید تخصصی"
+      ],
+      "discount_applied": null,
+      "amount": 200000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-17T15:05:05.722Z"
+    },
+    {
+      "id": "bk_1794927715692",
+      "operator_id": 1,
+      "operator_name": "فرزاد",
+      "date": "1405/08/26",
+      "start_time": "19:30",
+      "end_time": "20:15",
+      "duration": 45,
+      "customer_name": "مجید",
+      "customer_phone": "09876543210",
+      "services": [
+        "اصلاح کلاسیک و فید تخصصی"
+      ],
+      "discount_applied": null,
+      "amount": 200000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-17T15:01:55.693Z"
+    }
+  ],
   "shifts": [
     {
       "id": "sh_1",
@@ -177,6 +268,13 @@
       "date": "1405/07/25",
       "start_time": "10:00",
       "end_time": "24:00"
+    },
+    {
+      "id": "int_1794926457244",
+      "operator_id": 1,
+      "date": "1405/08/26",
+      "start_time": "15:30",
+      "end_time": "23:30"
     }
   ],
   "current_theme": "dark",
@@ -190,7 +288,8 @@
     "welcome_text": "تجربه‌ای متمایز از استایل و پیرایش حرفه‌ای. لطفاً خدمات و زمان مدنظرتان را رزرو کنید.",
     "install_prompt_text": "اگه نمی‌خوای هرسری دنبال لینک نگردی، برنامه رو نصب کن تا با یک لمس همیشه روی صفحه گوشیت باشه!",
     "arrival_rule": "زمان نوبت تقریبی است؛ لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن الف حضور داشته باشید.",
-    "cancellation_rule": "در صورت انصراف یا نیاز به جابجایی ساعت، لطفاً حداقل ۳ ساعت قبل اطلاع دهید تا حق نوبت سایر مراجعین محفوظ بماند."
+    "cancellation_rule": "در صورت انصراف یا نیاز به جابجایی ساعت، لطفاً حداقل ۳ ساعت قبل اطلاع دهید تا حق نوبت سایر مراجعین محفوظ بماند.",
+    "tcart_api_key": "sk_JrmQwmPZDep0JuEDejFVuUQuQYDP9LWPmoGcUhbQ1Wk"
   },
   "portfolios": [
     {

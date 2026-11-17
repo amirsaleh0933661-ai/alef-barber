@@ -70,9 +70,9 @@ export default function OperatorPanel() {
 
   const [db, setDb] = useState<any>({ 
     operators: [
-      { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber', merchant_id: '' },
-      { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', role: 'barber', merchant_id: '' },
-      { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer', merchant_id: '' }
+      { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber' },
+      { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', role: 'barber' },
+      { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer' }
     ], 
     services: [], 
     portfolios: [],
@@ -80,12 +80,20 @@ export default function OperatorPanel() {
     bookings: [], 
     discounts: [], 
     off_days: [],
-    salon_info: { name: 'سالن پیرایش الف', phone: '', address: '', instagram: '', map_url: '', arrival_rule: '', cancellation_rule: '' },
+    salon_info: { 
+      name: 'سالن پیرایش الف', 
+      phone: '', 
+      address: '', 
+      instagram: '', 
+      map_url: '', 
+      arrival_rule: '', 
+      cancellation_rule: '',
+      tcart_api_key: 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
+    },
     current_theme: 'dark' 
   });
 
-  const [merchantInputs, setMerchantInputs] = useState<{ [key: number]: string }>({});
-  const isMerchantInitializedRef = useRef(false);
+  const [tcartApiKeyInput, setTcartApiKeyInput] = useState('');
 
   const [newStart, setNewStart] = useState('13:00');
   const [newEnd, setNewEnd] = useState('15:00');
@@ -104,7 +112,6 @@ export default function OperatorPanel() {
   const [newBarberUsername, setNewBarberUsername] = useState('');
   const [newBarberPassword, setNewBarberPassword] = useState('');
   const [newBarberPhone, setNewBarberPhone] = useState('');
-  const [newBarberMerchant, setNewBarberMerchant] = useState('');
 
   const [salonNameInput, setSalonNameInput] = useState('');
   const [salonPhoneInput, setSalonPhoneInput] = useState('');
@@ -139,15 +146,6 @@ export default function OperatorPanel() {
       const data = await res.json();
       setDb(data);
 
-      if (!isMerchantInitializedRef.current && data.operators) {
-        const tokens: { [key: number]: string } = {};
-        data.operators.forEach((op: any) => {
-          tokens[op.id] = op.merchant_id || '';
-        });
-        setMerchantInputs(tokens);
-        isMerchantInitializedRef.current = true;
-      }
-
       if (data.salon_info) {
         setSalonNameInput(data.salon_info.name || 'سالن پیرایش الف');
         setSalonPhoneInput(data.salon_info.phone || '');
@@ -159,6 +157,7 @@ export default function OperatorPanel() {
         setInstallPromptInput(data.salon_info.install_prompt_text || '');
         setArrivalRuleInput(data.salon_info.arrival_rule || '');
         setCancellationRuleInput(data.salon_info.cancellation_rule || '');
+        setTcartApiKeyInput(data.salon_info.tcart_api_key || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38');
       }
 
       if (data.current_theme === 'light' || data.current_theme === 'dark') {
@@ -274,49 +273,39 @@ export default function OperatorPanel() {
     setOperator(null);
   };
 
-  const handleSaveMerchantToken = async (opId: number, opName: string) => {
-    const token = (merchantInputs[opId] || '').trim();
+  const handleSaveTcartApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = tcartApiKeyInput.trim();
+    if (!cleanKey) {
+      showToast('لطفاً کلید API تیکارت را وارد کنید.', 'error');
+      return;
+    }
 
     const res = await fetch('/api/booking', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'update_operator_merchant',
-        operator_id: opId,
-        merchant_id: token
+        action: 'update_salon_info',
+        name: salonNameInput,
+        phone: salonPhoneInput,
+        address: salonAddressInput,
+        instagram: salonInstaInput,
+        map_url: salonMapInput,
+        welcome_title: welcomeTitleInput,
+        welcome_text: welcomeTextInput,
+        install_prompt_text: installPromptInput,
+        arrival_rule: arrivalRuleInput,
+        cancellation_rule: cancellationRuleInput,
+        tcart_api_key: cleanKey
       })
     });
 
     const result = await res.json();
     if (result.success) {
-      if (result.is_connected) {
-        showToast(`درگاه شاپرک برای ${opName} فعال و متصل شد ✓`);
-      } else {
-        showToast(`توکن ذخیره شد (وضعیت: غیرفعال یا ناقص)`, 'error');
-      }
-      isMerchantInitializedRef.current = false;
+      showToast('کلید API تیکارت با موفقیت ذخیره و فعال شد ✓');
       loadData();
     } else {
-      showToast('خطا در ذخیره توکن', 'error');
-    }
-  };
-
-  const handleClearMerchantToken = async (opId: number, opName: string) => {
-    setMerchantInputs(prev => ({ ...prev, [opId]: '' }));
-    const res = await fetch('/api/booking', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'update_operator_merchant',
-        operator_id: opId,
-        merchant_id: ''
-      })
-    });
-    const result = await res.json();
-    if (result.success) {
-      showToast(`درگاه برای ${opName} غیرفعال شد.`);
-      isMerchantInitializedRef.current = false;
-      loadData();
+      showToast('خطا در ذخیره کلید API', 'error');
     }
   };
 
@@ -335,8 +324,7 @@ export default function OperatorPanel() {
         name: newBarberName,
         username: newBarberUsername,
         password: newBarberPassword,
-        phone: newBarberPhone,
-        merchant_id: newBarberMerchant
+        phone: newBarberPhone
       })
     });
 
@@ -346,8 +334,6 @@ export default function OperatorPanel() {
       setNewBarberUsername('');
       setNewBarberPassword('');
       setNewBarberPhone('');
-      setNewBarberMerchant('');
-      isMerchantInitializedRef.current = false;
       showToast(`آرایشگر جدید "${result.operator.name}" اضافه شد.`);
       loadData();
     } else {
@@ -369,7 +355,6 @@ export default function OperatorPanel() {
         const result = await res.json();
         if (result.success) {
           showToast(`آرایشگر "${name}" حذف شد.`);
-          isMerchantInitializedRef.current = false;
           loadData();
         } else {
           showToast(result.error || 'خطا در حذف', 'error');
@@ -394,13 +379,14 @@ export default function OperatorPanel() {
         welcome_text: welcomeTextInput,
         install_prompt_text: installPromptInput,
         arrival_rule: arrivalRuleInput,
-        cancellation_rule: cancellationRuleInput
+        cancellation_rule: cancellationRuleInput,
+        tcart_api_key: tcartApiKeyInput
       })
     });
 
     const result = await res.json();
     if (result.success) {
-      showToast('تنظیمات سالن، متن‌های ولکام و قوانین کنسلی با موفقیت ذخیره شدند.');
+      showToast('تنظیمات سالن، کلید تیکارت و قوانین با موفقیت ذخیره شدند.');
       loadData();
     }
   };
@@ -946,7 +932,7 @@ export default function OperatorPanel() {
               }`}
             >
               <CreditCard className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-              <span>درگاه‌ها</span>
+              <span>درگاه تیکارت</span>
             </button>
 
             <button
@@ -988,8 +974,8 @@ export default function OperatorPanel() {
               <div className="flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <h3 className="text-sm font-black text-white">مدیریت درگاه‌های پرداخت شاپرک (زرین‌پال)</h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">درآمد هر آرایشگر مستقیماً به حساب خودش واریز می‌شود</p>
+                  <h3 className="text-sm font-black text-white">تنظیمات درگاه کارت‌به‌کارت تیکارت (Tcart)</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">کلید API اختصاصی پنل خود را برای اتصال درگاه وارد کنید</p>
                 </div>
               </div>
               <button onClick={loadData} className="text-blue-500 p-1.5 hover:bg-slate-800 rounded-xl">
@@ -997,84 +983,33 @@ export default function OperatorPanel() {
               </button>
             </div>
 
-            <div className="space-y-4 pt-1">
-              {(db.operators || [])
-                .filter((o: any) => o.role !== 'developer')
-                .map((op: any) => {
-                  const currentToken = merchantInputs[op.id] !== undefined ? merchantInputs[op.id] : (op.merchant_id || '');
-                  const isConnected = currentToken.trim().length >= 30;
+            <form onSubmit={handleSaveTcartApiKey} className="space-y-3.5 pt-1">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  کلید API تیکارت (Tcart API Key):
+                </label>
+                <input
+                  type="text"
+                  placeholder="sk_..."
+                  value={tcartApiKeyInput}
+                  onChange={(e) => setTcartApiKeyInput(e.target.value)}
+                  className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono focus:outline-none`}
+                />
+                <span className="text-[11px] text-slate-400 block mt-1.5 leading-relaxed">
+                  • کلید API خود را از پنل تیکارت (بخش توسعه‌دهنده) کپی کرده و اینجا وارد کنید تا پرداخت‌ها روی حساب شما ست شود.
+                  <br />
+                  • حتماً از فعال بودن اشتراک و ثبت کارت بانکی در پنل tcartt.com اطمینان حاصل فرمایید.
+                </span>
+              </div>
 
-                  return (
-                    <div key={op.id} className={`p-4 sm:p-5 ${c.innerCard} border rounded-2xl space-y-3.5 relative overflow-hidden`}>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-sm">{op.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">(@{op.username})</span>
-                          </div>
-                          <div className="text-[11px] text-slate-300 font-mono mt-0.5">
-                            تلفن مستقیم: {op.phone || 'ثبت نشده'}
-                          </div>
-                        </div>
-
-                        <div className={`px-3 py-1 rounded-full text-[11px] font-black flex items-center gap-1.5 border ${
-                          isConnected 
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shadow-md shadow-emerald-500/10' 
-                            : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                        }`}>
-                          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></span>
-                          <span>{isConnected ? 'درگاه متصل و فعال' : 'درگاه غیرفعال / فاقد توکن'}</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[11px] text-slate-300 block font-bold">
-                          مرچنت‌کد ۳۶ رقمی زرین‌پال شاپرک برای {op.name}:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="مثال: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                          value={currentToken}
-                          onChange={(e) => setMerchantInputs({ ...merchantInputs, [op.id]: e.target.value })}
-                          className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none tracking-wider`}
-                        />
-                      </div>
-
-                      <div className="flex gap-2 justify-end pt-1">
-                        {isConnected && (
-                          <button
-                            type="button"
-                            onClick={() => handleClearMerchantToken(op.id, op.name)}
-                            className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl text-xs font-bold transition flex items-center gap-1"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            حذف توکن
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleSaveMerchantToken(op.id, op.name)}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95"
-                        >
-                          <Check className="w-4 h-4" />
-                          ذخیره و فعال‌سازی درگاه
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-
-            <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-xs text-blue-300 leading-relaxed space-y-1">
-              <p className="font-bold text-white flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-blue-400" /> راهنمای دریافت وجه:
-              </p>
-              <p className="text-[11px] text-slate-300">
-                • به محض اینکه مرچنت‌کد ۳۶ رقمی زرین‌پال را وارد کرده و دکمه ذخیره را بزنید، چراغ سبز می‌شود.
-                <br />
-                • از آن لحظه به بعد، هر مشتری که نوبت آن فرد را رزرو کند، مستقیماً به شاپرک منتقل شده و پول مستقیماً به شبای ثبت‌شده در پنل زرین‌پال همان فرد واریز می‌گردد.
-              </p>
-            </div>
+              <button
+                type="submit"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                ذخیره و فعال‌سازی کلید تیکارت
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -1399,42 +1334,6 @@ export default function OperatorPanel() {
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-700/50 space-y-3">
-                <span className="text-xs font-black text-cyan-400 block flex items-center gap-1">
-                  <MessageSquare className="w-4 h-4" /> تنظیمات متن‌های پنجره خوش‌آمدگویی و نصب:
-                </span>
-
-                <div>
-                  <label className="text-[11px] block mb-1 font-bold text-slate-300">تیتر پنجره خوش‌آمدگویی:</label>
-                  <input
-                    type="text"
-                    value={welcomeTitleInput}
-                    onChange={(e) => setWelcomeTitleInput(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] block mb-1 font-bold text-slate-300">توضیحات پنجره خوش‌آمدگویی:</label>
-                  <textarea
-                    rows={2}
-                    value={welcomeTextInput}
-                    onChange={(e) => setWelcomeTextInput(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none leading-relaxed`}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] block mb-1 font-bold text-emerald-400">متن پیام پیشنهاد نصب برنامه (PWA):</label>
-                  <textarea
-                    rows={2}
-                    value={installPromptInput}
-                    onChange={(e) => setInstallPromptInput(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none leading-relaxed`}
-                  />
-                </div>
-              </div>
-
               <button
                 type="submit"
                 className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 font-black rounded-xl text-xs shadow-md transition active:scale-95"
@@ -1663,7 +1562,7 @@ export default function OperatorPanel() {
                       </div>
                       <div className={`text-[11px] ${c.muted} font-mono mt-1`}>تماس: {b.customer_phone}</div>
                       <div className={`text-[10px] ${c.muted} mt-0.5`}>خدمات: {(b.services || []).join('، ')}</div>
-                      <div className="text-[10px] text-amber-500 font-mono mt-0.5">شاپرک: {b.ref_id}</div>
+                      <div className="text-[10px] text-amber-500 font-mono mt-0.5">پیگیری: {b.ref_id}</div>
                     </div>
 
                     <div className="text-left flex flex-col items-end gap-1">

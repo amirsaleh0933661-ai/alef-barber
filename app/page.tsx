@@ -124,11 +124,6 @@ export default function BookingPage() {
   const [copiedNote, setCopiedNote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const [showPaymentGateway, setShowPaymentGateway] = useState(false);
-  const [cardPan, setCardPan] = useState('');
-  const [cardCvv2, setCardCvv2] = useState('');
-  const [cardOtp, setCardOtp] = useState('');
-
   const [welcomeStep, setWelcomeStep] = useState<1 | 2 | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
@@ -201,11 +196,9 @@ export default function BookingPage() {
               setReceipt(booked);
             }
           });
-        showToast('پرداخت شما در شاپرک با موفقیت انجام شد ✓');
+        showToast('پرداخت و ثبت نوبت با موفقیت انجام شد ✓');
       } else if (paymentStatus === 'canceled') {
-        showToast('پرداخت در درگاه بانکی لغو گردید.');
-      } else if (paymentStatus === 'failed') {
-        showToast('تراکنش بانکی ناموفق بود.');
+        showToast('پرداخت کارت‌به‌کارت لغو گردید.');
       }
     }
 
@@ -264,7 +257,6 @@ export default function BookingPage() {
   const availableBarbers = (db.operators || []).filter((o: any) => o.role !== 'developer');
   const currentOp = availableBarbers.find((o: any) => o.id === operatorId) || availableBarbers[0] || { name: 'فرزاد' };
   const activePhoneNumber = currentOp?.phone || db.salon_info?.phone || '';
-  const isOpGatewayConnected = (currentOp?.merchant_id || '').length >= 30;
 
   const currentOpServices = (db.services || []).filter((s: any) => s.operator_id === operatorId);
   const activeServiceObjects = currentOpServices.filter((s: any) => selectedServices.includes(s.id));
@@ -375,12 +367,12 @@ export default function BookingPage() {
 
     const mobileRegex = /^09[0-9]{9}$/;
     if (!mobileRegex.test(phone.trim())) {
-      showToast('شماره تماس نامعتبر است! لطفاً شماره موبایل ۱۱ رقمی (شروع با ۰۹) وارد کنید.');
+      showToast('شماره تماس نامعتبر است! لطفاً شماره موبایل ۱۱ رقمی وارد کنید.');
       return;
     }
 
     if (!selectedStartTime) {
-      showToast('لطفاً ساعت نوبت را از لیست ساعت‌ها انتخاب کنید.');
+      showToast('لطفاً ساعت نوبت را انتخاب کنید.');
       return;
     }
     if (selectedServices.length === 0) {
@@ -396,7 +388,7 @@ export default function BookingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'request_gateway_payment',
+          action: 'request_card_payment',
           operator_id: operatorId,
           date: selectedDate,
           start_time: selectedStartTime,
@@ -406,67 +398,28 @@ export default function BookingPage() {
           services: chosenServiceTitles,
           discount_code: appliedDiscount?.code || null,
           amount: finalPrice,
-          callback_url: `${window.location.origin}/api/payment/callback`
+          callback_url: `${window.location.origin}/api/payment`
         })
       });
 
       const result = await res.json();
       setIsSubmitting(false);
 
+      // بررسی اینکه آیا تیکارت لینک پرداخت فرستاده است یا خیر
       if (result.success && result.is_real_gateway && result.payment_url) {
-        showToast('در حال انتقال به درگاه امن شاپرک...');
-        window.location.href = result.payment_url;
+        showToast('در حال انتقال به درگاه پرداخت تیکارت...');
+        window.location.href = result.payment_url; // هدایت کاربر به صفحه تیکارت
+      } else if (result.success && result.booking_id) {
+        showToast('شناسه سفارش ایجاد شد، اما لینک درگاه دریافت نشد. کلید API یا اشتراک تیکارت را بررسی کنید.');
       } else {
-        setShowPaymentGateway(true);
-      }
-    } catch {
-      setIsSubmitting(false);
-      setShowPaymentGateway(true);
-    }
-  };
-
-  const handleCompleteSimulatorPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    const chosenServiceTitles = activeServiceObjects.map((s: any) => s.title);
-    const mockRefId = 'SHP-' + Math.floor(10000000 + Math.random() * 90000000);
-
-    try {
-      const res = await fetch('/api/booking', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'confirm_paid_booking',
-          operator_id: operatorId,
-          date: selectedDate,
-          start_time: selectedStartTime,
-          total_duration: totalDuration,
-          customer_name: name.trim(),
-          customer_phone: phone.trim(),
-          services: chosenServiceTitles,
-          discount_code: appliedDiscount?.code || null,
-          amount: finalPrice,
-          transaction_ref: mockRefId
-        })
-      });
-
-      const result = await res.json();
-      setIsSubmitting(false);
-
-      if (result.success) {
-        setShowPaymentGateway(false);
-        setReceipt(result.booking);
-        loadData();
-      } else {
-        showToast(result.error || 'خطا در ثبت نوبت');
+        showToast(result.error || 'خطا در اتصال به درگاه تیکارت');
       }
     } catch {
       setIsSubmitting(false);
       showToast('خطای ارتباط با سرور');
     }
   };
-
+  
   const handleCustomerCancelBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = cancelRefInput.trim().toUpperCase();
@@ -588,7 +541,7 @@ export default function BookingPage() {
                 <span className="font-mono text-emerald-400 font-bold">{Number(receipt.amount).toLocaleString('fa-IR')} تومان</span>
               </div>
               <div className="flex justify-between">
-                <span className={c.muted}>کد رهگیری شاپرک:</span>
+                <span className={c.muted}>کد پیگیری تراکنش:</span>
                 <span className="font-mono text-amber-400 font-bold tracking-wider">{receipt.ref_id}</span>
               </div>
             </div>
@@ -660,7 +613,7 @@ export default function BookingPage() {
                   <input
                     type="text"
                     required
-                    placeholder="مثال: SHP-12345678"
+                    placeholder="مثال: TCART-12345678"
                     value={cancelRefInput}
                     onChange={(e) => setCancelRefInput(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 text-white text-xs p-3 rounded-xl font-mono text-center uppercase tracking-widest focus:outline-none"
@@ -819,89 +772,6 @@ export default function BookingPage() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* شبیه‌ساز پرداخت آزمایشی */}
-      {showPaymentGateway && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
-          <div className={`max-w-md w-full ${c.card} border rounded-3xl p-6 shadow-2xl space-y-5 animate-fadeIn`}>
-            <div className="flex justify-between items-center border-b pb-3 border-slate-700/50">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-emerald-400" />
-                <span className="text-xs font-black">درگاه پرداخت آزمایشی شاپرک</span>
-              </div>
-              <button onClick={() => setShowPaymentGateway(false)} className="text-slate-400 hover:text-rose-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-2xl text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className={c.muted}>پذیرنده:</span>
-                <span className="font-bold text-white">سالن پیرایش الف ({currentOp?.name})</span>
-              </div>
-              <div className="flex justify-between font-mono">
-                <span className={c.muted}>مبلغ قابل پرداخت:</span>
-                <span className="font-black text-emerald-400 text-sm">{finalPrice.toLocaleString('fa-IR')} تومان</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleCompleteSimulatorPayment} className="space-y-3">
-              <div>
-                <label className="text-[11px] block mb-1 text-slate-300 font-bold">شماره کارت ۱۶ رقمی:</label>
-                <input
-                  type="text"
-                  required
-                  maxLength={19}
-                  placeholder="۶۰۳۷-۹۹۱۸-XXXX-XXXX"
-                  value={cardPan}
-                  onChange={(e) => setCardPan(e.target.value)}
-                  className={`w-full ${c.input} border text-xs p-3 rounded-xl text-center font-mono tracking-widest focus:outline-none`}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] block mb-1 text-slate-300 font-bold">کد CVV2:</label>
-                  <input
-                    type="password"
-                    required
-                    maxLength={4}
-                    placeholder="•••"
-                    value={cardCvv2}
-                    onChange={(e) => setCardCvv2(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-3 rounded-xl text-center font-mono focus:outline-none`}
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] block mb-1 text-slate-300 font-bold">رمز پویا:</label>
-                  <input
-                    type="password"
-                    required
-                    maxLength={7}
-                    placeholder="رمز پویا"
-                    value={cardOtp}
-                    onChange={(e) => setCardOtp(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-3 rounded-xl text-center font-mono focus:outline-none`}
-                  />
-                </div>
-              </div>
-
-              <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
-                🔒 اتصال امن شاپرک. تا پرداخت کامل انجام نشود نوبت ثبت نمی‌گردد.
-              </p>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2"
-              >
-                <Lock className="w-4 h-4" />
-                {isSubmitting ? 'در حال تایید...' : `پرداخت نهایی (${finalPrice.toLocaleString('fa-IR')} تومان)`}
-              </button>
-            </form>
           </div>
         </div>
       )}
@@ -1234,11 +1104,7 @@ export default function BookingPage() {
               className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2 active:scale-95"
             >
               <CreditCard className="w-4 h-4" />
-              {isSubmitting 
-                ? 'در حال آماده‌سازی پرداخت...' 
-                : isOpGatewayConnected 
-                ? `پرداخت مستقیم شاپرک (${finalPrice.toLocaleString('fa-IR')} تومان)` 
-                : `پرداخت آنلاین و ثبت قطعی (${finalPrice.toLocaleString('fa-IR')} تومان)`}
+              {isSubmitting ? 'در حال اتصال به تیکارت...' : `پرداخت کارت‌به‌کارت تیکارت (${finalPrice.toLocaleString('fa-IR')} تومان)`}
             </button>
           </form>
         )}
