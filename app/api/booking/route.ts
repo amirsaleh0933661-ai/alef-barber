@@ -72,7 +72,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const db = await getDb();
 
-    // بررسی هوشمند وضعیت فاکتور و هماهنگی با تیکارت
     if (body.action === 'check_booking_status') {
       const bookingId = body.booking_id;
       const booking = (db.bookings || []).find((b: any) => b.id === bookingId || b.ref_id === bookingId);
@@ -83,7 +82,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ found: true, paid: true, booking });
       }
 
-      // اگر سفارش هنوز PENDING است، وضعیت آن را از API تیکارت استعلام می‌کنیم تا اگر دستی/اتوماتیک تایید شده، اینجا هم آپدیت شود
       if (booking.payment_status === 'PENDING_PAYMENT' && booking.ref_id) {
         try {
           const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
@@ -96,7 +94,6 @@ export async function POST(req: Request) {
           
           if (tcartCheckRes.ok) {
             const tcartCheckData = await tcartCheckRes.json();
-            // اگر در تیکارت پرداخت شده بود (بر اساس وضعیت درگاه)
             if (tcartCheckData && (tcartCheckData.status === 'paid' || tcartCheckData.is_paid || tcartCheckData.paid)) {
               booking.payment_status = 'PAID';
               await saveDb(db);
@@ -140,7 +137,24 @@ export async function POST(req: Request) {
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      const pendingBooking = {
+      // اضافه شدن ref_id به تایپ‌پدینگ جهت رفع خطای TypeScript
+      const pendingBooking: {
+        id: any;
+        operator_id: number;
+        operator_name: any;
+        date: any;
+        start_time: any;
+        end_time: string;
+        duration: number;
+        customer_name: any;
+        customer_phone: any;
+        services: any;
+        discount_applied: any;
+        amount: number;
+        payment_status: string;
+        created_at: string;
+        ref_id?: string;
+      } = {
         id: booking_id,
         operator_id: opId,
         operator_name: barberName,
