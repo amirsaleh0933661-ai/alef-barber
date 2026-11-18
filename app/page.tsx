@@ -6,7 +6,7 @@ import {
   AlertCircle, CheckCircle2, Scissors, Timer, Info, Share2, Copy, 
   X, Sun, Moon, Phone, MapPin, CreditCard, Lock, Image as ImageIcon, Ban,
   Download, ArrowLeft, Smartphone, Share, PlusSquare, Search, AlertTriangle, Trash2, RefreshCw,
-  Globe, MessageCircle, Navigation, ExternalLink, MapPinned
+  Globe, MessageCircle, Navigation, ExternalLink, MapPinned,
 } from 'lucide-react';
 
 function InstagramSvg({ className = "w-4 h-4" }: { className?: string }) {
@@ -133,6 +133,7 @@ export default function BookingPage() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [currentTotalMins, setCurrentTotalMins] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [currentYear, setCurrentYear] = useState<number>(2026);
 
   const [db, setDb] = useState<any>({ 
     operators: [], 
@@ -207,6 +208,7 @@ export default function BookingPage() {
   };
 
   useEffect(() => {
+    setCurrentYear(new Date().getFullYear());
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(max-width: 767px)').matches;
     setIsMobileDevice(mobile);
     const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
@@ -991,7 +993,7 @@ export default function BookingPage() {
           </div>}
 
           <div className={`text-center text-[9px] leading-5 pt-1 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
-            {salon.footer_text || `© ${new Date().getFullYear()} ${salon.name || 'سالن پیرایش الف'} · تمامی حقوق محفوظ است`}
+            {salon.footer_text || `© ${currentYear} ${salon.name || 'سالن پیرایش الف'} · تمامی حقوق محفوظ است`}
           </div>
           <div className={`text-center text-[8px] leading-4 tracking-wide ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>
             طراحی و توسعه: امیرمحمد صالحی · <a href="tel:09336616658" dir="ltr" className="hover:text-amber-500 transition-colors">09336616658</a>
