@@ -5,7 +5,8 @@ import {
   Calendar, Clock, ShieldCheck, User, Sparkles, Tag, Check, 
   AlertCircle, CheckCircle2, Scissors, Timer, Info, Share2, Copy, 
   X, Sun, Moon, Phone, MapPin, CreditCard, Lock, Image as ImageIcon, Ban,
-  Download, ArrowLeft, Smartphone, Share, PlusSquare, Search, AlertTriangle, Trash2, RefreshCw
+  Download, ArrowLeft, Smartphone, Share, PlusSquare, Search, AlertTriangle, Trash2, RefreshCw,
+  Globe, MessageCircle, Navigation, Instagram, ExternalLink, MapPinned,
 } from 'lucide-react';
 
 function InstagramSvg({ className = "w-4 h-4" }: { className?: string }) {
@@ -134,28 +135,14 @@ export default function BookingPage() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const [db, setDb] = useState<any>({ 
-    operators: [
-      { id: 1, name: 'فرزاد', username: 'farzad', role: 'barber', phone: '09121111111' },
-      { id: 2, name: 'فرهاد', username: 'farhad', role: 'barber', phone: '09122222222' }
-    ], 
+    operators: [], 
     services: [], 
     portfolios: [],
     intervals: [], 
     bookings: [], 
     discounts: [], 
     off_days: [],
-    salon_info: { 
-      name: 'سالن پیرایش الف', 
-      phone: '', 
-      address: '', 
-      instagram: '', 
-      map_url: '',
-      welcome_title: 'به سالن پیرایش الف خوش آمدید',
-      welcome_text: '',
-      install_prompt_text: '',
-      arrival_rule: '',
-      cancellation_rule: ''
-    },
+    salon_info: { name: 'سالن پیرایش الف' },
     current_theme: 'dark' 
   });
 
@@ -175,7 +162,7 @@ export default function BookingPage() {
   const [manualRefInput, setManualRefInput] = useState('');
   const [receipt, setReceipt] = useState<any | null>(null);
   const [copiedNote, setCopiedNote] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelRefInput, setCancelRefInput] = useState('');
@@ -183,9 +170,12 @@ export default function BookingPage() {
   const [cancelSuccessData, setCancelSuccessData] = useState<any>(null);
 
   const [clientTheme, setClientTheme] = useState<'dark' | 'light'>('dark');
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
 
@@ -197,8 +187,7 @@ export default function BookingPage() {
       setDb(data);
 
       if (data.current_theme === 'light' || data.current_theme === 'dark') {
-        const saved = localStorage.getItem('client_theme');
-        setClientTheme(saved ? (saved as any) : data.current_theme);
+        setClientTheme(data.current_theme);
       }
 
       const barbers = (data.operators || []).filter((o: any) => o.role !== 'developer');
@@ -218,15 +207,39 @@ export default function BookingPage() {
   };
 
   useEffect(() => {
+    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(max-width: 767px)').matches;
+    setIsMobileDevice(mobile);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+    const dismissed = localStorage.getItem('alef_install_prompt_dismissed') === '1';
+    const onBeforeInstall = (event: any) => {
+      event.preventDefault();
+      setDeferredInstallPrompt(event);
+      if (mobile && !standalone && !dismissed) setShowInstallPrompt(true);
+    };
+    const onInstalled = () => {
+      setShowInstallPrompt(false);
+      localStorage.setItem('alef_install_prompt_dismissed', '1');
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    const installTimer = mobile && !standalone && !dismissed
+      ? window.setTimeout(() => setShowInstallPrompt(true), 1400)
+      : undefined;
+
     const days = getShamsiNext7Days();
     setShamsiDays(days);
     if (days.length > 0) setSelectedDate(days[0].date);
     const n = new Date();
     setCurrentTotalMins(n.getHours() * 60 + n.getMinutes());
     loadData();
+
+    return () => {
+      if (installTimer) window.clearTimeout(installTimer);
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
   }, []);
 
-  // بررسی خودکار وضعیت پرداخت هر ۳ ثانیه
   useEffect(() => {
     if (!customInvoice?.booking_id && !customInvoice?.tracking_code) return;
 
@@ -245,7 +258,7 @@ export default function BookingPage() {
           setReceipt(data.booking);
           setCustomInvoice(null);
           clearInterval(interval);
-          showToast('پرداخت به طور خودکار تایید شد ✓');
+          showToast('پرداخت به طور خودکار تایید شد ✓', 'success');
           loadData();
         }
       } catch (e) {}
@@ -257,7 +270,7 @@ export default function BookingPage() {
   const handleManualPaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualRefInput.trim()) {
-      showToast('لطفاً کد رهگیری یا کد پرداخت را وارد کنید.');
+      showToast('لطفاً کد رهگیری یا کد پرداخت را وارد کنید.', 'error');
       return;
     }
     try {
@@ -274,13 +287,13 @@ export default function BookingPage() {
       if (result.success) {
         setReceipt(result.booking);
         setCustomInvoice(null);
-        showToast('کد پرداخت ثبت و نوبت قطعی شد ✓');
+        showToast('کد پرداخت ثبت و نوبت قطعی شد ✓', 'success');
         loadData();
       } else {
-        showToast(result.error || 'خطا در ثبت کد پرداخت');
+        showToast(result.error || 'خطا در ثبت کد پرداخت', 'error');
       }
     } catch {
-      showToast('خطای شبکه در ثبت کد پرداخت');
+      showToast('خطای شبکه در ثبت کد پرداخت', 'error');
     }
   };
 
@@ -297,22 +310,51 @@ export default function BookingPage() {
   const toggleClientTheme = () => {
     const next = clientTheme === 'dark' ? 'light' : 'dark';
     setClientTheme(next);
-    localStorage.setItem('client_theme', next);
   };
+
+  const dismissInstallPrompt = () => {
+    setShowInstallPrompt(false);
+    localStorage.setItem('alef_install_prompt_dismissed', '1');
+  };
+
+  const installApp = async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice?.outcome === 'accepted') dismissInstallPrompt();
+      setDeferredInstallPrompt(null);
+      return;
+    }
+    showToast('از منوی مرورگر گزینه Add to Home Screen یا افزودن به صفحه اصلی را بزنید.', 'success');
+  };
+
+  const salon = db.salon_info || {};
+  const normalizeInstagram = (value: string) => value.replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '');
+  const normalizeUrl = (value: string) => /^https?:\/\//i.test(value) ? value : `https://${value}`;
 
   const isDark = clientTheme === 'dark';
   const c = {
-    bg: isDark ? 'bg-[#090d16]' : 'bg-[#f8fafc]',
-    text: isDark ? 'text-slate-100' : 'text-slate-800',
-    card: isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-    innerCard: isDark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200',
-    input: isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900',
+    bg: isDark ? 'bg-[#08090d]' : 'bg-[#f4f5f8]',
+    text: isDark ? 'text-slate-100' : 'text-[#202536]',
+    card: isDark ? 'bg-[#11131b] border-white/10' : 'bg-white border-[#e6e8ef] shadow-[0_18px_55px_rgba(27,35,56,.08)]',
+    innerCard: isDark ? 'bg-white/[0.045] border-white/[0.09]' : 'bg-[#f7f8fb] border-[#e7e9f0]',
+    input: isDark ? 'bg-[#090b12] border-white/10 text-white' : 'bg-white border-[#d9deea] text-[#202536]',
     muted: isDark ? 'text-slate-400' : 'text-slate-500',
     buttonSelected: 'bg-blue-600 border-blue-500 text-white shadow-lg ring-2 ring-blue-400/40'
   };
 
   const availableBarbers = (db.operators || []).filter((o: any) => o.role !== 'developer');
   const currentOp = availableBarbers.find((o: any) => o.id === operatorId) || availableBarbers[0] || { name: 'فرزاد' };
+  
+  // شماره تماس و اینستاگرام اختصاصی آرایشگر منتخب
+  const salonPhone = currentOp?.phone || salon.phone || '';
+  const salonInstagram = currentOp?.instagram || salon.instagram || '';
+  const salonWhatsapp = salon.whatsapp || salon.whatsapp_number || salonPhone;
+  const salonWebsite = salon.website || salon.website_url || '';
+  const salonTelegram = salon.telegram || salon.telegram_url || '';
+  const salonAddress = salon.address || '';
+  const salonMapUrl = salon.map_url || salon.google_maps_url || '';
+
   const currentOpServices = (db.services || []).filter((s: any) => s.operator_id === operatorId);
   const activeServiceObjects = currentOpServices.filter((s: any) => selectedServices.includes(s.id));
   const totalDuration = activeServiceObjects.reduce((sum: number, s: any) => sum + Number(s.duration || 30), 0);
@@ -320,7 +362,11 @@ export default function BookingPage() {
 
   let discountAmount = 0;
   if (appliedDiscount) {
-    discountAmount = appliedDiscount.type === 'fixed' ? Math.min(subtotalPrice, appliedDiscount.value) : Math.round((subtotalPrice * appliedDiscount.value) / 100);
+    if (appliedDiscount.type === 'fixed') {
+      discountAmount = Math.min(subtotalPrice, appliedDiscount.value);
+    } else {
+      discountAmount = Math.round((subtotalPrice * appliedDiscount.value) / 100);
+    }
   }
   const finalPrice = Math.max(0, subtotalPrice - discountAmount);
   const estimatedEndTime = selectedStartTime ? minsToTime(timeToMins(selectedStartTime) + totalDuration) : '';
@@ -329,6 +375,9 @@ export default function BookingPage() {
   const opIntervalsForDay = (db.intervals || []).filter((it: any) => it.operator_id === operatorId && it.date === selectedDate);
   const dayBookings = (db.bookings || []).filter((b: any) => b.operator_id === operatorId && b.date === selectedDate);
   const isSelectedDateToday = shamsiDays.length > 0 && selectedDate === shamsiDays[0]?.date;
+
+  const barberMinAdvanceHours = Number(currentOp?.min_advance_hours) || 0;
+  const barberMinAdvanceMins = barberMinAdvanceHours * 60;
 
   const availableStartSlots: { time: string; available: boolean; tooClose?: boolean }[] = [];
   if (!isSelectedDateOff) {
@@ -341,7 +390,7 @@ export default function BookingPage() {
 
         let isTooClose = false;
         if (isSelectedDateToday && currentTotalMins > 0) {
-          if (candidateStart <= currentTotalMins + 180) {
+          if (candidateStart <= currentTotalMins + barberMinAdvanceMins) {
             isTooClose = true;
           }
         }
@@ -384,6 +433,11 @@ export default function BookingPage() {
     if (!clean) return;
     const found = (db.discounts || []).find((d: any) => d.code === clean && d.active);
     if (found) {
+      if (found.operator_id && Number(found.operator_id) !== Number(operatorId)) {
+        setAppliedDiscount(null);
+        setDiscountMsg({ type: 'err', text: 'این کد تخفیف مخصوص این آرایشگر نیست.' });
+        return;
+      }
       const dType = found.type || 'percent';
       const dVal = Number(found.value ?? found.percent);
       setAppliedDiscount({ code: found.code, type: dType, value: dVal });
@@ -397,7 +451,7 @@ export default function BookingPage() {
   const handleProceedPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim() || !selectedStartTime || selectedServices.length === 0) {
-      showToast('لطفاً تمامی اطلاعات را کامل وارد کنید.');
+      showToast('لطفاً تمامی اطلاعات را کامل وارد کنید.', 'error');
       return;
     }
 
@@ -429,13 +483,13 @@ export default function BookingPage() {
 
       if (result.success && result.card_number) {
         setCustomInvoice({ ...result, booking_id: bookingId });
-        showToast('فاکتور پرداخت صادر شد.');
+        showToast('فاکتور پرداخت صادر شد.', 'success');
       } else {
-        showToast(result.error || 'خطا در صدور فاکتور');
+        showToast(result.error || 'خطا در صدور فاکتور', 'error');
       }
     } catch {
       setIsSubmitting(false);
-      showToast('خطای ارتباط با سرور');
+      showToast('خطای ارتباط با سرور', 'error');
     }
   };
 
@@ -456,11 +510,11 @@ export default function BookingPage() {
         setCancelSuccessData(result);
         loadData();
       } else {
-        showToast(result.error || 'کد یافت نشد.');
+        showToast(result.error || 'نوبتی یافت نشد.', 'error');
       }
     } catch {
       setIsCanceling(false);
-      showToast('خطا در ارتباط با سرور');
+      showToast('خطا در ارتباط با سرور', 'error');
     }
   };
 
@@ -472,17 +526,67 @@ export default function BookingPage() {
     setTimeout(() => setCopiedNote(false), 2500);
   };
 
+  const currentOpPortfolios = (db.portfolios || []).filter((p: any) => p.operator_id === operatorId);
+
   return (
-    <main className={`min-h-screen ${c.bg} ${c.text} py-10 px-4 font-sans relative flex flex-col items-center justify-start`} dir="rtl">
+    <main className={`booking-page ${isDark ? 'theme-dark' : 'theme-light'} min-h-screen ${c.text} py-5 sm:py-9 px-3 sm:px-6 font-sans relative flex flex-col items-center justify-start overflow-hidden ${isDark ? 'bg-[#07070a]' : 'bg-[#f2f4f8]'}`} dir="rtl">
+      <style jsx global>{`
+        .booking-page { isolation:isolate; }
+        .booking-page .booking-shell { position:relative; overflow:hidden; border-color:rgba(245,190,70,.18); box-shadow:0 24px 90px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.06); }
+        .booking-page .booking-shell:before { content:""; position:absolute; inset:0 0 auto; height:2px; background:linear-gradient(90deg,transparent,#f5c451,#ec4899,#8b5cf6,transparent); opacity:.85; pointer-events:none; }
+        .booking-page .booking-shell > * { position:relative; }
+        .booking-page .booking-shell [class~="text-[10px]"] { font-size:9px!important; }
+        .booking-page .booking-shell [class~="text-[11px]"] { font-size:10px!important; }
+        .booking-page .booking-shell .text-xs { font-size:11px!important; line-height:1.65!important; }
+        .booking-page .booking-shell .text-sm { font-size:13px!important; }
+        .booking-page .booking-shell .text-base { font-size:15px!important; }
+        .booking-page .booking-shell input, .booking-page .booking-shell button { letter-spacing:normal; }
+        .booking-page .booking-shell button { transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease, background-color .22s ease; }
+        .booking-page .contact-card { color:#fff!important; }
+        .booking-page .contact-card * { box-sizing:border-box; }
+        .booking-page .booking-shell button:active { transform:scale(.985); }
+        .booking-page .booking-shell input:focus { outline:none; border-color:#d6a936; box-shadow:0 0 0 3px rgba(214,169,54,.13); }
+        .booking-page.theme-light .booking-shell .text-slate-100:not(button *):not(a *) { color:#202536!important; }
+        .booking-page.theme-light .booking-shell .text-slate-200:not(button *):not(a *) { color:#394256!important; }
+        .booking-page.theme-light .booking-shell .text-slate-300:not(button *):not(a *) { color:#536078!important; }
+        .booking-page.theme-light .booking-shell .text-slate-400:not(button *):not(a *) { color:#68748a!important; }
+        .booking-page.theme-light .booking-shell h1 { color:#202536!important; background:none!important; -webkit-text-fill-color:#202536!important; text-shadow:none!important; }
+        .booking-page.theme-light .booking-shell { border-color:#e5e7ef!important; box-shadow:0 24px 70px rgba(31,41,65,.10), inset 0 1px 0 rgba(255,255,255,.95)!important; }
+        .booking-page.theme-light .booking-shell:before { background:linear-gradient(90deg,transparent,#c99b35,#d66a9b,#8870cf,transparent); opacity:1; }
+        .booking-page.theme-light .booking-shell .border-b { border-color:#e8eaf0!important; }
+        .booking-page.theme-light .booking-shell .bg-blue-500\/10 { background:rgba(59,130,246,.08)!important; }
+        .booking-page.theme-light .booking-shell .bg-slate-800\/60 { background:#f1f3f8!important; }
+        .booking-page.theme-light .booking-shell .text-slate-600 { color:#657087!important; }
+        .booking-page.theme-light .booking-shell .bg-slate-950:not(button):not(a) { background:#f1f5f9!important; }
+        .booking-page.theme-light .booking-shell .bg-slate-900:not(button):not(a) { background:#fff!important; }
+        .booking-page.theme-light .booking-shell .border-slate-800 { border-color:#e2e8f0!important; }
+        .booking-page.theme-light .booking-shell .border-slate-700 { border-color:#dbe2ec!important; }
+        .booking-page.theme-light .booking-shell .bg-slate-800\/60 { background:#f1f5f9!important; }
+        @media (min-width:768px) { .booking-page .booking-shell { backdrop-filter:blur(18px); } }
+        @media (max-width:640px) { .booking-page { padding-bottom:24px; } .booking-page .booking-shell { border-radius:26px; } }
+      `}</style>
+      <div className="pointer-events-none fixed inset-0 overflow-hidden"><div className={`absolute -top-40 -right-32 w-96 h-96 rounded-full blur-[120px] ${isDark ? 'bg-fuchsia-600/10' : 'bg-violet-300/25'}`}/><div className={`absolute top-[35%] -left-40 w-96 h-96 rounded-full blur-[130px] ${isDark ? 'bg-amber-500/10' : 'bg-amber-200/30'}`}/><div className={`absolute bottom-0 right-1/3 w-96 h-72 rounded-full blur-[130px] ${isDark ? 'bg-violet-600/10' : 'bg-pink-200/20'}`}/></div>
+      {showInstallPrompt && isMobileDevice && <div className="fixed inset-0 z-[150] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-3 sm:p-5">
+        <div className="w-full max-w-sm rounded-[2rem] border border-amber-200/20 bg-[#15131b] p-5 shadow-[0_25px_90px_rgba(0,0,0,.7)] animate-fadeIn">
+          <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-200 to-amber-500 text-black grid place-items-center shadow-lg"><Smartphone className="w-6 h-6"/></div><div><b className="text-white block">نصب اپلیکیشن سالن</b><span className="text-[11px] text-slate-400">رزرو سریع‌تر، همیشه در دسترس</span></div></div><button onClick={dismissInstallPrompt} className="p-2 rounded-xl text-slate-400 hover:bg-white/10"><X className="w-4 h-4"/></button></div>
+          <p className="text-xs leading-6 text-slate-300 mt-4">برای دسترسی راحت‌تر، صفحه نوبت‌دهی را به صفحه اصلی گوشی اضافه کن؛ مثل یک اپلیکیشن مستقل باز می‌شود.</p>
+          <button onClick={installApp} className="mt-4 w-full rounded-xl bg-gradient-to-l from-amber-300 to-yellow-500 py-3.5 text-sm font-black text-black shadow-lg shadow-amber-500/15 flex items-center justify-center gap-2"><Download className="w-4 h-4"/> نصب / افزودن به صفحه اصلی</button>
+          <button onClick={dismissInstallPrompt} className="mt-2 w-full rounded-xl py-2.5 text-xs font-bold text-slate-400 hover:text-white">فعلاً نه</button>
+          {!deferredInstallPrompt && <p className="text-[10px] text-slate-500 text-center mt-2">در آیفون: دکمه Share مرورگر ← Add to Home Screen</p>}
+        </div>
+      </div>}
+
       
       {toast && (
-        <div className="fixed top-4 left-4 right-4 max-w-md mx-auto z-50 p-3.5 bg-slate-900 text-white rounded-2xl shadow-xl flex items-center justify-between text-xs font-bold border border-slate-700">
-          <span>{toast}</span>
+        <div className={`fixed top-4 left-4 right-4 max-w-md mx-auto z-50 p-3.5 rounded-2xl shadow-xl flex items-center justify-between text-xs font-bold border ${
+          toast.type === 'error' ? 'bg-rose-600 text-white border-rose-400' : 'bg-slate-900 text-white border-slate-700'
+        }`}>
+          <span>{toast.msg}</span>
           <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      {/* صفحه پرداخت تیکارت همراه با کد دستی و دکمه رفرش */}
+      {/* صفحه پرداخت تیکارت */}
       {customInvoice && (
         <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-3xl flex items-center justify-center p-4 animate-fadeIn">
           <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-4 relative">
@@ -497,7 +601,7 @@ export default function BookingPage() {
               <h3 className="text-xs font-bold text-slate-300 mt-2">کد پیگیری فاکتور: <span className="font-mono text-white font-black">{customInvoice.tracking_code}</span></h3>
             </div>
 
-            <PaymentTimer expiresAt={customInvoice.expires_at} onExpire={() => { showToast('مهلت پرداخت به پایان رسید.'); setCustomInvoice(null); }} />
+            <PaymentTimer expiresAt={customInvoice.expires_at} onExpire={() => { showToast('مهلت پرداخت به پایان رسید.', 'error'); setCustomInvoice(null); }} />
 
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center space-y-2.5">
               <div className="space-y-1">
@@ -511,10 +615,10 @@ export default function BookingPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
-                <button onClick={() => { navigator.clipboard.writeText(String(customInvoice.unique_amount_toman)); showToast('تومان کپی شد ✓'); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
+                <button onClick={() => { navigator.clipboard.writeText(String(customInvoice.unique_amount_toman)); showToast('تومان کپی شد ✓', 'success'); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
                   <Copy className="w-3.5 h-3.5 text-amber-400" /> کپی تومان
                 </button>
-                <button onClick={() => { navigator.clipboard.writeText(String(customInvoice.unique_amount_toman * 10)); showToast('ریال کپی شد ✓'); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
+                <button onClick={() => { navigator.clipboard.writeText(String(customInvoice.unique_amount_toman * 10)); showToast('ریال کپی شد ✓', 'success'); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
                   <Copy className="w-3.5 h-3.5 text-emerald-400" /> کپی ریال
                 </button>
               </div>
@@ -528,7 +632,7 @@ export default function BookingPage() {
               <div className="font-mono text-xl font-black tracking-widest text-white text-center py-1.5 bg-black/40 rounded-xl border border-blue-500/20">
                 {customInvoice.card_number}
               </div>
-              <button onClick={() => { navigator.clipboard.writeText(customInvoice.card_number); showToast('شماره کارت کپی شد ✓'); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-2">
+              <button onClick={() => { navigator.clipboard.writeText(customInvoice.card_number); showToast('شماره کارت کپی شد ✓', 'success'); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-2">
                 <Copy className="w-4 h-4" /> کپی شماره کارت
               </button>
             </div>
@@ -561,7 +665,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* رسید موفقیت و نکات */}
+      {/* رسید موفقیت */}
       {receipt && (
         <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-slate-900 border border-emerald-500/40 text-white rounded-3xl p-6 shadow-2xl space-y-4 text-center">
@@ -577,7 +681,6 @@ export default function BookingPage() {
             <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-[11px] text-blue-200 text-right space-y-1">
               <p className="font-bold">📌 نکات مهم حضور در سالن الف:</p>
               <p>• لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن حضور داشته باشید.</p>
-              <p>• ثبت نوبت حداقل از ۳ ساعت قبل امکان‌پذیر است تا از ازدحام جلوگیری شود.</p>
             </div>
 
             <button onClick={copyAppointmentText} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold transition">
@@ -590,8 +693,33 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* فرم اصلی رزرو همراه با دکمه رفرش */}
-      <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 sm:p-8 space-y-7 shadow-xl relative z-10 mb-6`} dir="rtl">
+      {/* مدال لغو نوبت مشتری */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-slate-900 border border-rose-500/30 text-white rounded-3xl p-6 shadow-2xl space-y-4 relative">
+            <button onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+            {!cancelSuccessData ? (
+              <form onSubmit={handleCustomerCancelBooking} className="space-y-4">
+                <h3 className="text-sm font-black text-white">لغو نوبت رزرو شده</h3>
+                <input type="text" required placeholder="کد رهگیری (مثلاً TCO-...)" value={cancelRefInput} onChange={(e) => setCancelRefInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white text-xs p-3 rounded-xl font-mono text-center uppercase focus:outline-none" />
+                <button type="submit" disabled={isCanceling} className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs transition">
+                  {isCanceling ? 'در حال بررسی...' : 'استعلام و لغو نوبت'}
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-4 text-center">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
+                <h3 className="text-sm font-black">نوبت با موفقیت لغو شد</h3>
+                <p className="text-xs text-slate-300">برای پیگیری وجه با آرایشگر تماس بگیرید: <br/><br/><span className="font-mono text-emerald-400">{cancelSuccessData.operator_phone}</span></p>
+                <button onClick={() => { setShowCancelModal(false); setCancelSuccessData(null); setCancelRefInput(''); }} className="w-full py-2.5 bg-slate-800 text-slate-200 hover:bg-slate-700 rounded-xl text-xs font-bold transition">بستن</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* فرم اصلی رزرو */}
+      <div className={`booking-shell max-w-3xl w-full ${isDark ? 'bg-[#111116]/95 border-white/10' : 'bg-white border-slate-200'} backdrop-blur-2xl border rounded-[2rem] p-4 sm:p-7 lg:p-9 space-y-6 sm:space-y-8 shadow-[0_25px_100px_rgba(0,0,0,.55)] relative z-10 mb-6`} dir="rtl">
         <div className={`space-y-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} pb-5`}>
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -608,6 +736,16 @@ export default function BookingPage() {
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
                 <span className="text-[11px]">بروزرسانی</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(true)}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 transition ml-1"
+                title="لغو نوبت با کد رهگیری"
+              >
+                <Search className="w-3 h-3" />
+                <span>لغو نوبت</span>
+              </button>
             </div>
 
             <button onClick={toggleClientTheme} className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold ${isDark ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-700'}`}>
@@ -615,8 +753,9 @@ export default function BookingPage() {
             </button>
           </div>
           <div className="text-center space-y-1">
-            <h1 className={`text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>{db.salon_info?.name || 'سالن پیرایش الف'}</h1>
-            <p className={`text-xs ${c.muted}`}>رزرو آنلاین با آرایشگران سالن الف (محدودیت ثبت: حداقل ۳ ساعت قبل)</p>
+            <h1 className={`text-[1.65rem] sm:text-4xl font-black tracking-tight leading-[1.5] ${isDark ? 'bg-gradient-to-l from-amber-200 via-white to-fuchsia-200 bg-clip-text text-transparent drop-shadow-[0_4px_24px_rgba(216,180,90,.16)]' : 'text-[#202536]'}`}>{db.salon_info?.name || 'سالن پیرایش الف'}</h1>
+            <div className={`mx-auto mt-2 h-[3px] w-14 rounded-full ${isDark ? 'bg-gradient-to-r from-fuchsia-500 via-amber-300 to-amber-500' : 'bg-gradient-to-r from-[#b58a32] via-[#d7b35e] to-[#9b78c9]'}`}/>
+            <p className={`text-[11px] sm:text-xs ${c.muted} pt-2 leading-6`}>{salon.tagline || 'تجربه‌ای متفاوت از آراستگی؛ نوبتت رو آنلاین رزرو کن'}</p>
           </div>
         </div>
 
@@ -634,6 +773,29 @@ export default function BookingPage() {
               );
             })}
           </div>
+        </div>
+
+        {/* بخش نمونه‌کارهای اختصاصی همان آرایشگر */}
+        <div className="space-y-2.5">
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
+            <ImageIcon className="w-4 h-4 text-purple-500" /> نمونه‌کارهای تخصصی {currentOp?.name}:
+          </label>
+          {currentOpPortfolios.length === 0 ? (
+            <p className={`text-xs ${c.muted} text-center py-4 ${c.innerCard} rounded-2xl border`}>
+              هنوز نمونه‌کاری برای این آرایشگر ثبت نشده است.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {currentOpPortfolios.map((port: any) => (
+                <div key={port.id} className="rounded-2xl overflow-hidden border border-slate-700/60 bg-black/40 shadow group">
+                  <div className="w-full h-32 overflow-hidden bg-slate-800">
+                    <img src={port.image} alt={port.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                  </div>
+                  <p className="text-[11px] font-bold p-2 text-center truncate text-slate-200">{port.title}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* خدمات */}
@@ -679,9 +841,11 @@ export default function BookingPage() {
           </div>
         </div>
 
-        {/* ساعت‌های شروع با اعمال محدودیت ۳ ساعته */}
+        {/* ساعت‌های شروع */}
         <div className="space-y-2.5">
-          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}><Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت (حداقل ۳ ساعت قبل):</label>
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
+            <Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت (حداقل {barberMinAdvanceHours > 0 ? barberMinAdvanceHours + ' ساعت قبل' : 'بدون محدودیت'}):
+          </label>
           {isSelectedDateOff ? (
             <div className="py-5 text-center bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold">آرایشگر در این روز حضور ندارد.</div>
           ) : availableStartSlots.length === 0 ? (
@@ -708,7 +872,7 @@ export default function BookingPage() {
                   >
                     <span className="font-mono text-sm">{slot.time}</span>
                     <span className="text-[9px] mt-0.5 opacity-90">
-                      {slot.tooClose ? 'کمتر از ۳ ساعت' : !slot.available ? 'رزرو شده' : 'قابل رزرو'}
+                      {slot.tooClose ? `کمتر از ${barberMinAdvanceHours} ساعت` : !slot.available ? 'رزرو شده' : 'قابل رزرو'}
                     </span>
                   </button>
                 );
@@ -717,7 +881,36 @@ export default function BookingPage() {
           )}
         </div>
 
-        {/* فرم مشخصات و پرداخت */}
+        {/* کد تخفیف */}
+        {!isSelectedDateOff && (
+          <div className={`${c.innerCard} border p-4 rounded-2xl space-y-2`}>
+            <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}>
+              <Tag className="w-3.5 h-3.5 text-amber-500" /> کد تخفیف:
+            </label>
+            <form onSubmit={handleApplyDiscount} className="flex gap-2">
+              <input
+                type="text"
+                placeholder="مثال: ALEF20"
+                value={discountInput}
+                onChange={(e) => setDiscountInput(e.target.value)}
+                className={`flex-1 ${c.input} border text-xs p-2.5 rounded-xl uppercase font-mono focus:outline-none`}
+              />
+              <button
+                type="submit"
+                className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 rounded-xl text-xs font-bold transition"
+              >
+                اعمال
+              </button>
+            </form>
+            {discountMsg && (
+              <p className={`text-[11px] font-bold mt-1 ${discountMsg.type === 'ok' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {discountMsg.text}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* مشخصات مراجع و پرداخت */}
         {selectedStartTime && !isSelectedDateOff && (
           <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-2xl space-y-4 animate-fadeIn`}>
             <h3 className={`text-xs font-black ${c.text}`}>مشخصات مراجع:</h3>
@@ -727,6 +920,16 @@ export default function BookingPage() {
             </div>
 
             <div className={`border-t pt-3 space-y-1.5 text-xs ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+              <div className="flex justify-between">
+                <span className={c.muted}>مجموع خدمات:</span>
+                <span>{subtotalPrice.toLocaleString('fa-IR')} تومان</span>
+              </div>
+              {appliedDiscount && (
+                <div className="flex justify-between text-amber-500 font-bold">
+                  <span>تخفیف ({appliedDiscount.code}):</span>
+                  <span>- {discountAmount.toLocaleString('fa-IR')} تومان</span>
+                </div>
+              )}
               <div className="flex justify-between font-black text-sm pt-1">
                 <span>مبلغ نهایی:</span>
                 <span className="text-emerald-500 font-mono text-base">{finalPrice.toLocaleString('fa-IR')} تومان</span>
@@ -739,6 +942,62 @@ export default function BookingPage() {
             </button>
           </form>
         )}
+
+        {/* بخش ارتباطی جمع‌وجور؛ کارت‌ها در هر دو تم کنتراست مستقل و ثابت دارند */}
+        <section className={`pt-6 sm:pt-7 mt-2 border-t ${isDark ? 'border-white/10' : 'border-slate-200'} space-y-4`}>
+          <div className="text-center space-y-1.5">
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-bold ${isDark ? 'border-amber-300/20 bg-amber-300/[0.07] text-amber-200' : 'border-amber-500/25 bg-amber-50 text-amber-700'}`}>
+              <Sparkles className="w-3 h-3" /> همیشه در دسترس شما
+            </span>
+            <h2 className={`text-sm sm:text-base font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>ارتباط با سالن</h2>
+            <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>راه‌های ارتباطی و مسیریابی</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+            {salonPhone && <a href={`tel:${salonPhone}`} className="group min-w-0 rounded-xl border border-emerald-400/20 bg-[#111b1a] hover:bg-[#142521] hover:border-emerald-400/45 px-2.5 py-2.5 flex items-center gap-2 transition-all duration-200">
+              <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-emerald-400/10 text-emerald-300"><Phone className="w-4 h-4"/></span>
+              <span className="min-w-0 flex-1"><b className="block text-[11px] font-bold text-white">تماس مستقیم</b><small className="block mt-0.5 text-[9px] text-emerald-100/65 truncate" dir="ltr">{salonPhone}</small></span>
+            </a>}
+
+            {salonWhatsapp && <a href={`https://wa.me/${String(salonWhatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-green-400/20 bg-[#111b17] hover:bg-[#14251d] hover:border-green-400/45 px-2.5 py-2.5 flex items-center gap-2 transition-all duration-200">
+              <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-green-400/10 text-green-300"><MessageCircle className="w-4 h-4"/></span>
+              <span className="min-w-0 flex-1"><b className="block text-[11px] font-bold text-white">واتساپ</b><small className="block mt-0.5 text-[9px] text-green-100/65 truncate">گفت‌وگوی مستقیم</small></span>
+            </a>}
+
+            {salonInstagram && <a href={`https://instagram.com/${normalizeInstagram(salonInstagram)}`} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-pink-400/25 bg-[#20131e] hover:bg-[#2a1728] hover:border-pink-400/50 px-2.5 py-2.5 flex items-center gap-2 transition-all duration-200">
+              <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-white"><InstagramSvg className="w-4 h-4"/></span>
+              <span className="min-w-0 flex-1"><b className="block text-[11px] font-bold text-white">اینستاگرام</b><small className="block mt-0.5 text-[9px] text-pink-100/70 truncate" dir="ltr">@{normalizeInstagram(salonInstagram)}</small></span>
+            </a>}
+
+            {salonTelegram && <a href={salonTelegram.startsWith('http') ? salonTelegram : `https://t.me/${salonTelegram.replace(/^@/, '')}`} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-sky-400/20 bg-[#111923] hover:bg-[#142337] hover:border-sky-400/45 px-2.5 py-2.5 flex items-center gap-2 transition-all duration-200">
+              <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-sky-400/10 text-sky-300"><MessageCircle className="w-4 h-4"/></span>
+              <span className="min-w-0 flex-1"><b className="block text-[11px] font-bold text-white">تلگرام</b><small className="block mt-0.5 text-[9px] text-sky-100/65 truncate">کانال و پشتیبانی</small></span>
+            </a>}
+
+            {salonWebsite && <a href={normalizeUrl(salonWebsite)} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-amber-300/20 bg-[#1d1a12] hover:bg-[#292316] hover:border-amber-300/45 px-2.5 py-2.5 flex items-center gap-2 transition-all duration-200">
+              <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-amber-300/10 text-amber-200"><Globe className="w-4 h-4"/></span>
+              <span className="min-w-0 flex-1"><b className="block text-[11px] font-bold text-white">وب‌سایت</b><small className="block mt-0.5 text-[9px] text-amber-100/65 truncate">سایت رسمی مجموعه</small></span>
+            </a>}
+
+            {salonMapUrl && <a href={normalizeUrl(salonMapUrl)} target="_blank" rel="noreferrer" className="group col-span-2 min-w-0 rounded-xl border border-violet-400/25 bg-[#171522] hover:bg-[#201c31] hover:border-violet-300/50 px-3 py-2.5 flex items-center gap-2.5 transition-all duration-200">
+              <span className="grid place-items-center w-9 h-9 shrink-0 rounded-lg bg-violet-400/10 text-violet-300"><Navigation className="w-4 h-4"/></span>
+              <span className="min-w-0 flex-1"><b className="block text-[11px] font-bold text-white">مسیریابی و مشاهده آدرس</b><small className="block mt-0.5 text-[9px] text-violet-100/65 truncate">{salonAddress || 'مشاهده موقعیت سالن روی نقشه'}</small></span>
+              <ExternalLink className="w-3.5 h-3.5 shrink-0 text-violet-200/80"/>
+            </a>}
+          </div>
+
+          {salonAddress && <div className={`rounded-xl border px-3 py-2.5 flex items-start gap-2.5 ${isDark ? 'border-white/[0.08] bg-white/[0.035]' : 'border-slate-200 bg-white'}`}>
+            <MapPinned className={`w-4 h-4 shrink-0 mt-0.5 ${isDark ? 'text-amber-300' : 'text-amber-600'}`}/>
+            <div className="min-w-0"><b className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>نشانی مجموعه</b><p className={`text-[10px] leading-5 break-words ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{salonAddress}</p></div>
+          </div>}
+
+          <div className={`text-center text-[9px] leading-5 pt-1 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+            {salon.footer_text || `© ${new Date().getFullYear()} ${salon.name || 'سالن پیرایش الف'} · تمامی حقوق محفوظ است`}
+          </div>
+          <div className={`text-center text-[8px] leading-4 tracking-wide ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>
+            طراحی و توسعه: امیرمحمد صالحی · <a href="tel:09336616658" dir="ltr" className="hover:text-amber-500 transition-colors">09336616658</a>
+          </div>
+        </section>
       </div>
 
     </main>

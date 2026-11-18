@@ -69,11 +69,7 @@ export default function OperatorPanel() {
   const [activeTab, setActiveTab] = useState<'salon_stats' | 'payment_gateways' | 'barbers_mgr' | 'salon_settings' | 'my_panel'>('payment_gateways');
 
   const [db, setDb] = useState<any>({ 
-    operators: [
-      { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', role: 'barber' },
-      { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', role: 'barber' },
-      { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer' }
-    ], 
+    operators: [], 
     services: [], 
     portfolios: [],
     intervals: [], 
@@ -88,12 +84,14 @@ export default function OperatorPanel() {
       map_url: '', 
       arrival_rule: '', 
       cancellation_rule: '',
-      tcart_api_key: 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38'
+      tcart_api_key: '',
+      bale_bot_token: ''
     },
     current_theme: 'dark' 
   });
 
   const [tcartApiKeyInput, setTcartApiKeyInput] = useState('');
+  const [baleBotTokenInput, setBaleBotTokenInput] = useState('');
 
   const [newStart, setNewStart] = useState('13:00');
   const [newEnd, setNewEnd] = useState('15:00');
@@ -127,6 +125,17 @@ export default function OperatorPanel() {
   const [oldPasswordInput, setOldPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
 
+  const [myMinAdvanceHours, setMyMinAdvanceHours] = useState('3');
+  const [myBaleChatIdInput, setMyBaleChatIdInput] = useState('');
+
+  const [barberDiscountCode, setBarberDiscountCode] = useState('');
+  const [barberDiscountType, setBarberDiscountType] = useState<'percent' | 'fixed'>('percent');
+  const [barberDiscountValue, setBarberDiscountValue] = useState('15');
+
+  const [editOpId, setEditOpId] = useState<number | null>(null);
+  const [editOpPhone, setEditOpPhone] = useState('');
+  const [editOpInsta, setEditOpInsta] = useState('');
+
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -157,7 +166,8 @@ export default function OperatorPanel() {
         setInstallPromptInput(data.salon_info.install_prompt_text || '');
         setArrivalRuleInput(data.salon_info.arrival_rule || '');
         setCancellationRuleInput(data.salon_info.cancellation_rule || '');
-        setTcartApiKeyInput(data.salon_info.tcart_api_key || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38');
+        setTcartApiKeyInput(data.salon_info.tcart_api_key || '');
+        setBaleBotTokenInput(data.salon_info.bale_bot_token || '');
       }
 
       if (data.current_theme === 'light' || data.current_theme === 'dark') {
@@ -190,6 +200,8 @@ export default function OperatorPanel() {
           parsed.role = 'developer';
         }
         setOperator(parsed); 
+        setMyMinAdvanceHours(String(parsed.min_advance_hours || 3));
+        setMyBaleChatIdInput(parsed.bale_chat_id || '');
       } catch { 
         localStorage.removeItem('op_session'); 
       }
@@ -200,10 +212,22 @@ export default function OperatorPanel() {
     }
   }, []);
 
+  useEffect(() => {
+    if (operator && db.operators) {
+      const updatedMe = db.operators.find((o: any) => o.id === operator.id);
+      if (updatedMe) {
+        setOperator(updatedMe);
+        localStorage.setItem('op_session', JSON.stringify(updatedMe));
+        setMyMinAdvanceHours(String(updatedMe.min_advance_hours || 3));
+        setMyBaleChatIdInput(updatedMe.bale_chat_id || '');
+      }
+    }
+  }, [db.operators]);
+
   const changeTheme = async (newTheme: ThemeMode) => {
     setTheme(newTheme);
     localStorage.setItem('op_theme', newTheme);
-    showToast(`تم ${newTheme === 'dark' ? 'مشکی' : 'سفید'} انتخاب شد.`);
+    showToast(`تم ${newTheme === 'dark' ? 'مشکی' : 'سفید'} انتخاب شد.`, 'success');
     try {
       await fetch('/api/booking', {
         method: 'POST',
@@ -227,27 +251,7 @@ export default function OperatorPanel() {
       setOperator(dev);
       localStorage.setItem('op_session', JSON.stringify(dev));
       setActiveTab('payment_gateways');
-      showToast('ورود با دسترسی کامل برنامه‌نویس');
-      loadData();
-      return;
-    }
-
-    if ((targetUser === 'farzad' || targetUser === 'op1') && targetPass === '123') {
-      const op = { id: 1, name: 'فرزاد', username: 'farzad', role: 'barber' };
-      setOperator(op);
-      localStorage.setItem('op_session', JSON.stringify(op));
-      setActiveTab('salon_stats');
-      showToast('خوش آمدید فرزاد عزیز');
-      loadData();
-      return;
-    }
-
-    if ((targetUser === 'farhad' || targetUser === 'op2') && targetPass === '456') {
-      const op = { id: 2, name: 'فرهاد', username: 'farhad', role: 'barber' };
-      setOperator(op);
-      localStorage.setItem('op_session', JSON.stringify(op));
-      setActiveTab('salon_stats');
-      showToast('خوش آمدید فرهاد عزیز');
+      showToast('ورود با دسترسی کامل برنامه‌نویس', 'success');
       loadData();
       return;
     }
@@ -260,7 +264,7 @@ export default function OperatorPanel() {
       setOperator(found);
       localStorage.setItem('op_session', JSON.stringify(found));
       setActiveTab('salon_stats');
-      showToast(`خوش آمدید ${found.name}`);
+      showToast(`خوش آمدید ${found.name}`, 'success');
       loadData();
       return;
     }
@@ -275,12 +279,6 @@ export default function OperatorPanel() {
 
   const handleSaveTcartApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanKey = tcartApiKeyInput.trim();
-    if (!cleanKey) {
-      showToast('لطفاً کلید API تیکارت را وارد کنید.', 'error');
-      return;
-    }
-
     const res = await fetch('/api/booking', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -291,21 +289,19 @@ export default function OperatorPanel() {
         address: salonAddressInput,
         instagram: salonInstaInput,
         map_url: salonMapInput,
-        welcome_title: welcomeTitleInput,
-        welcome_text: welcomeTextInput,
-        install_prompt_text: installPromptInput,
         arrival_rule: arrivalRuleInput,
         cancellation_rule: cancellationRuleInput,
-        tcart_api_key: cleanKey
+        tcart_api_key: tcartApiKeyInput.trim(),
+        bale_bot_token: baleBotTokenInput.trim()
       })
     });
 
     const result = await res.json();
     if (result.success) {
-      showToast('کلید API تیکارت با موفقیت ذخیره و فعال شد ✓');
+      showToast('تنظیمات درگاه و بات بله با موفقیت ذخیره شد ✓', 'success');
       loadData();
     } else {
-      showToast('خطا در ذخیره کلید API', 'error');
+      showToast('خطا در ذخیره تنظیمات', 'error');
     }
   };
 
@@ -334,7 +330,7 @@ export default function OperatorPanel() {
       setNewBarberUsername('');
       setNewBarberPassword('');
       setNewBarberPhone('');
-      showToast(`آرایشگر جدید "${result.operator.name}" اضافه شد.`);
+      showToast(`آرایشگر جدید "${result.operator.name}" اضافه شد.`, 'success');
       loadData();
     } else {
       showToast(result.error || 'خطا در ثبت آرایشگر', 'error');
@@ -354,13 +350,34 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast(`آرایشگر "${name}" حذف شد.`);
+          showToast(`آرایشگر "${name}" حذف شد.`, 'success');
           loadData();
         } else {
           showToast(result.error || 'خطا در حذف', 'error');
         }
       }
     });
+  };
+
+  const handleAdminUpdateBarber = async (opId: number) => {
+    const res = await fetch('/api/booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_operator_profile',
+        operator_id: opId,
+        phone: editOpPhone,
+        instagram: editOpInsta
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast('اطلاعات پرسنل بروزرسانی شد.', 'success');
+      setEditOpId(null);
+      loadData();
+    } else {
+      showToast('خطا در بروزرسانی', 'error');
+    }
   };
 
   const handleSaveSalonSettings = async (e: React.FormEvent) => {
@@ -375,19 +392,66 @@ export default function OperatorPanel() {
         address: salonAddressInput,
         instagram: salonInstaInput,
         map_url: salonMapInput,
-        welcome_title: welcomeTitleInput,
-        welcome_text: welcomeTextInput,
-        install_prompt_text: installPromptInput,
         arrival_rule: arrivalRuleInput,
         cancellation_rule: cancellationRuleInput,
-        tcart_api_key: tcartApiKeyInput
+        tcart_api_key: tcartApiKeyInput,
+        bale_bot_token: baleBotTokenInput
       })
     });
 
     const result = await res.json();
     if (result.success) {
-      showToast('تنظیمات سالن، کلید تیکارت و قوانین با موفقیت ذخیره شدند.');
+      showToast('تنظیمات سالن و قوانین با موفقیت ذخیره شدند.', 'success');
       loadData();
+    }
+  };
+
+  const handleUpdateMyProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!operator) return;
+    const res = await fetch('/api/booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_operator_profile',
+        operator_id: operator.id,
+        min_advance_hours: myMinAdvanceHours,
+        bale_chat_id: myBaleChatIdInput
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast('تنظیمات پیش‌رزرو و دسترسی اعلان بله ذخیره شد.', 'success');
+      loadData();
+    } else {
+      showToast('خطا در ذخیره تنظیمات', 'error');
+    }
+  };
+
+  const handleBarberAddDiscount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!operator) return;
+    const cleanCode = barberDiscountCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    const res = await fetch('/api/booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add_discount',
+        code: cleanCode,
+        type: barberDiscountType,
+        value: Number(barberDiscountValue),
+        operator_id: operator.id
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      setBarberDiscountCode('');
+      showToast(`کد تخفیف اختصاصی ${cleanCode} ایجاد شد.`, 'success');
+      loadData();
+    } else {
+      showToast('خطا در ایجاد کد تخفیف', 'error');
     }
   };
 
@@ -404,7 +468,7 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast('تمام نوبت‌ها صفر شدند.');
+          showToast('تمام نوبت‌ها صفر شدند.', 'success');
           loadData();
         }
       }
@@ -445,7 +509,7 @@ export default function OperatorPanel() {
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
         setNewPortfolioImage(compressedBase64);
         setIsCompressing(false);
-        showToast('تصویر بهینه‌سازی شد.');
+        showToast('تصویر بهینه‌سازی شد.', 'success');
       };
       img.src = event.target?.result as string;
     };
@@ -480,10 +544,10 @@ export default function OperatorPanel() {
     if (result.success) {
       setNewPortfolioTitle('');
       setNewPortfolioImage('');
-      showToast('نمونه‌کار ذخیره شد.');
+      showToast('نمونه‌کار آپلود و به گالری شما اضافه شد.', 'success');
       loadData();
     } else {
-      showToast('خطا در ذخیره نمونه‌کار', 'error');
+      showToast('خطا در آپلود نمونه‌کار', 'error');
     }
   };
 
@@ -500,7 +564,7 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast('نمونه‌کار حذف شد.');
+          showToast('نمونه‌کار حذف شد.', 'success');
           loadData();
         }
       }
@@ -531,7 +595,7 @@ export default function OperatorPanel() {
     const result = await res.json();
     if (result.success) {
       setNewServiceTitle('');
-      showToast(`خدمت "${newServiceTitle.trim()}" اضافه شد.`);
+      showToast(`خدمت "${newServiceTitle.trim()}" اضافه شد.`, 'success');
       loadData();
     } else {
       showToast('خطا در ذخیره خدمت', 'error');
@@ -551,7 +615,7 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast('خدمت حذف شد.');
+          showToast('خدمت حذف شد.', 'success');
           loadData();
         }
       }
@@ -573,36 +637,8 @@ export default function OperatorPanel() {
 
     const result = await res.json();
     if (result.success) {
-      showToast(result.is_off ? 'این تاریخ به عنوان روز تعطیل ثبت شد.' : 'این تاریخ به روز کاری بازگشت.');
+      showToast(result.is_off ? 'این تاریخ به عنوان روز تعطیل ثبت شد.' : 'این تاریخ به روز کاری بازگشت.', 'success');
       loadData();
-    }
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!operator) return;
-
-    const res = await fetch('/api/booking', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'change_password',
-        operator_id: operator.id,
-        old_password: oldPasswordInput,
-        new_password: newPasswordInput
-      })
-    });
-
-    const result = await res.json();
-    if (result.success) {
-      operator.password = newPasswordInput.trim();
-      localStorage.setItem('op_session', JSON.stringify(operator));
-      setOldPasswordInput('');
-      setNewPasswordInput('');
-      showToast('رمز عبور تغییر یافت.');
-      loadData();
-    } else {
-      showToast(result.error || 'خطا در تغییر رمز', 'error');
     }
   };
 
@@ -627,7 +663,7 @@ export default function OperatorPanel() {
     });
     const result = await res.json();
     if (result.success) {
-      showToast('شیفت کاری ذخیره شد.');
+      showToast('شیفت کاری ذخیره شد.', 'success');
       loadData();
     }
   };
@@ -645,7 +681,7 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast('شیفت حذف شد.');
+          showToast('شیفت حذف شد.', 'success');
           loadData();
         }
       }
@@ -665,33 +701,11 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast('نوبت لغو شد.');
+          showToast('نوبت لغو شد.', 'success');
           loadData();
         }
       }
     });
-  };
-
-  const handleAddDiscount = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanCode = newDiscountCode.trim().toUpperCase();
-    if (!cleanCode) return;
-    const res = await fetch('/api/booking', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        action: 'add_discount', 
-        code: cleanCode, 
-        type: discountType,
-        value: Number(newDiscountValue) 
-      })
-    });
-    const result = await res.json();
-    if (result.success) {
-      setNewDiscountCode('');
-      showToast(`کد تخفیف ${cleanCode} ایجاد شد.`);
-      loadData();
-    }
   };
 
   const handleDeleteDiscount = (code: string) => {
@@ -707,7 +721,7 @@ export default function OperatorPanel() {
         });
         const result = await res.json();
         if (result.success) {
-          showToast('کد تخفیف حذف شد.');
+          showToast('کد تخفیف حذف شد.', 'success');
           loadData();
         }
       }
@@ -828,6 +842,7 @@ export default function OperatorPanel() {
 
   const myServices = (db.services || []).filter((s: any) => s.operator_id === operator.id);
   const myPortfolios = (db.portfolios || []).filter((p: any) => p.operator_id === operator.id);
+  const myDiscounts = (db.discounts || []).filter((d: any) => Number(d.operator_id) === Number(operator.id));
   const myTodayIncome = myTodayBookings.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
 
   return (
@@ -932,7 +947,7 @@ export default function OperatorPanel() {
               }`}
             >
               <CreditCard className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-              <span>درگاه تیکارت</span>
+              <span>اتصالات و بات</span>
             </button>
 
             <button
@@ -974,8 +989,8 @@ export default function OperatorPanel() {
               <div className="flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <h3 className="text-sm font-black text-white">تنظیمات درگاه کارت‌به‌کارت تیکارت (Tcart)</h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">کلید API اختصاصی پنل خود را برای اتصال درگاه وارد کنید</p>
+                  <h3 className="text-sm font-black text-white">تنظیمات درگاه و بات بله</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">مدیریت اتصال به تیکارت و ربات پیام‌رسان بله</p>
                 </div>
               </div>
               <button onClick={loadData} className="text-blue-500 p-1.5 hover:bg-slate-800 rounded-xl">
@@ -995,9 +1010,19 @@ export default function OperatorPanel() {
                   onChange={(e) => setTcartApiKeyInput(e.target.value)}
                   className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono focus:outline-none`}
                 />
-                <span className="text-[11px] text-slate-400 block mt-1.5 leading-relaxed">
-                  • کلید API خود را از پنل تیکارت کپی کرده و اینجا وارد کنید تا پرداخت‌ها روی حساب شما ست شود.
-                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  توکن ربات پیام‌رسان بله (Bale Bot Token):
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: 123456789:ABCdefGHIjkl..."
+                  value={baleBotTokenInput}
+                  onChange={(e) => setBaleBotTokenInput(e.target.value)}
+                  className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono focus:outline-none`}
+                />
               </div>
 
               <button
@@ -1005,7 +1030,7 @@ export default function OperatorPanel() {
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                ذخیره و فعال‌سازی کلید تیکارت
+                ذخیره تنظیمات
               </button>
             </form>
           </div>
@@ -1116,8 +1141,13 @@ export default function OperatorPanel() {
                           آرایشگر: <span className="font-bold text-blue-500">{b.operator_name}</span>
                         </div>
                       </div>
-                      <div className="font-mono font-black text-emerald-500">
-                        {Number(b.amount).toLocaleString('fa-IR')} ت
+                      <div className="text-left flex flex-col items-end gap-1">
+                        <span className="font-mono font-black text-emerald-500">
+                          {Number(b.amount).toLocaleString('fa-IR')} ت
+                        </span>
+                        <button onClick={() => handleCancelBooking(b.id)} className="text-rose-500 text-[10px] hover:underline">
+                          لغو نوبت
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -1211,30 +1241,83 @@ export default function OperatorPanel() {
           </div>
 
           <div className={`${c.card} border p-5 rounded-3xl space-y-3`}>
-            <h3 className="text-xs font-black text-slate-200">پرسنل فعال سالن الف:</h3>
-            <div className="space-y-2">
+            <h3 className="text-xs font-black text-slate-200">پرسنل فعال سالن الف (مدیریت اطلاعات تماس و اینستاگرام):</h3>
+            <div className="space-y-3">
               {(db.operators || [])
                 .filter((o: any) => o.role !== 'developer')
                 .map((op: any) => (
-                  <div key={op.id} className={`p-3.5 ${c.innerCard} border rounded-2xl flex justify-between items-center text-xs`}>
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div key={op.id} className={`p-3.5 ${c.innerCard} border rounded-2xl space-y-2 text-xs`}>
+                    <div className="flex justify-between items-center">
+                      <div>
                         <span className="font-bold text-white text-sm">{op.name}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">(@{op.username})</span>
+                        <span className="text-[10px] text-slate-400 font-mono mr-2">(@{op.username})</span>
                       </div>
-                      <div className="text-[11px] text-emerald-400 font-mono mt-1">
-                        تلفن مستقیم: {op.phone || 'ثبت نشده'}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBarber(op.id, op.name)}
+                        className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-xl transition"
+                        title="حذف آرایشگر"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteBarber(op.id, op.name)}
-                      className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-xl transition"
-                      title="حذف آرایشگر"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {editOpId === op.id ? (
+                      <div className="space-y-2 pt-2 border-t border-slate-700">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block mb-0.5">شماره تماس مستقیم:</span>
+                          <input
+                            type="text"
+                            value={editOpPhone}
+                            onChange={(e) => setEditOpPhone(e.target.value)}
+                            className={`w-full ${c.input} border text-xs p-2 rounded-xl font-mono`}
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block mb-0.5">آیدی اینستاگرام (بدون @):</span>
+                          <input
+                            type="text"
+                            value={editOpInsta}
+                            onChange={(e) => setEditOpInsta(e.target.value)}
+                            className={`w-full ${c.input} border text-xs p-2 rounded-xl font-mono`}
+                          />
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleAdminUpdateBarber(op.id)}
+                            className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold"
+                          >
+                            ذخیره تغییرات
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditOpId(null)}
+                            className="py-1.5 px-3 bg-slate-700 text-white rounded-lg text-xs"
+                          >
+                            انصراف
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-700/50">
+                        <div className="text-[11px] text-slate-300 font-mono">
+                          <div>تلفن: {op.phone || 'ثبت نشده'}</div>
+                          <div>اینستاگرام: {op.instagram ? '@' + op.instagram : 'ثبت نشده'}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditOpId(op.id);
+                            setEditOpPhone(op.phone || '');
+                            setEditOpInsta(op.instagram || '');
+                          }}
+                          className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-lg text-[11px] font-bold"
+                        >
+                          ویرایش تماس و پیج
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
@@ -1340,84 +1423,128 @@ export default function OperatorPanel() {
               </button>
             </form>
           </div>
-
-          <div className={`${c.card} border p-5 rounded-3xl space-y-3`}>
-            <div className="flex justify-between items-center">
-              <h3 className="text-xs font-black text-amber-500 flex items-center gap-1.5">
-                <Tag className="w-4 h-4" /> تعریف کد تخفیف:
-              </h3>
-              <div className={`flex ${c.innerCard} p-1 rounded-xl border text-[10px]`}>
-                <button
-                  type="button"
-                  onClick={() => { setDiscountType('percent'); setNewDiscountValue('20'); }}
-                  className={`px-2 py-1 rounded-lg font-bold transition ${
-                    discountType === 'percent' ? 'bg-amber-500 text-slate-950' : c.muted
-                  }`}
-                >
-                  درصدی (٪)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDiscountType('fixed'); setNewDiscountValue('50000'); }}
-                  className={`px-2 py-1 rounded-lg font-bold transition ${
-                    discountType === 'fixed' ? 'bg-amber-500 text-slate-950' : c.muted
-                  }`}
-                >
-                  تومانی
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleAddDiscount} className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  required
-                  placeholder="کد (مثلاً ALEF20)"
-                  value={newDiscountCode}
-                  onChange={(e) => setNewDiscountCode(e.target.value)}
-                  className={`flex-1 ${c.input} border text-xs p-2.5 rounded-xl uppercase font-mono focus:outline-none`}
-                />
-                <input
-                  type="number"
-                  required
-                  placeholder={discountType === 'percent' ? 'درصد' : 'مبلغ'}
-                  value={newDiscountValue}
-                  onChange={(e) => setNewDiscountValue(e.target.value)}
-                  className={`w-32 ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black transition"
-              >
-                ایجاد کد تخفیف
-              </button>
-            </form>
-
-            <div className={`flex flex-wrap gap-2 pt-1 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-              {(db.discounts || []).map((d: any) => {
-                const isFixed = d.type === 'fixed';
-                const val = d.value ?? d.percent;
-                return (
-                  <div key={d.code} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs border ${c.innerCard}`}>
-                    <span className="font-mono font-bold text-amber-500">{d.code}</span>
-                    <span className={`text-[10px] ${c.muted} font-mono`}>
-                      ({isFixed ? `${Number(val).toLocaleString('fa-IR')} تومان` : `${Number(val).toLocaleString('fa-IR')}٪`})
-                    </span>
-                    <button onClick={() => handleDeleteDiscount(d.code)} className="text-rose-500 p-0.5">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
       )}
 
       {!isDeveloper && activeTab === 'my_panel' && (
         <div className="space-y-4 animate-fadeIn">
+          
+          {/* بخش تنظیمات اختصاصی آرایشگر (محدودیت پیش‌رزرو و چت‌آیدی بله جهت دریافت اعلان) */}
+          <form onSubmit={handleUpdateMyProfile} className={`${c.card} border p-5 rounded-3xl space-y-3.5`}>
+            <h3 className="text-xs font-black text-blue-500 flex items-center gap-1.5">
+              <User className="w-4 h-4" /> تنظیمات کارتابل و اعلان‌ها:
+            </h3>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] block mb-1 font-bold text-amber-500">
+                  محدودیت پیش‌رزرو (نوبت‌ها حداقل از چند ساعت قبل بسته شوند؟)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="48"
+                  value={myMinAdvanceHours}
+                  onChange={(e) => setMyMinAdvanceHours(e.target.value)}
+                  className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none text-center`}
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] block mb-1 font-bold text-emerald-400">
+                  چت آیدی بله (Bale Chat ID) جهت دریافت اعلان نوبت:
+                </label>
+                <input
+                  type="text"
+                  placeholder="عدد چت آیدی خود در بات بله"
+                  value={myBaleChatIdInput}
+                  onChange={(e) => setMyBaleChatIdInput(e.target.value)}
+                  className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none text-center`}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">با ارسال پیام به بات سالن در پیام‌رسان بله، چت‌آیدی خود را دریافت و اینجا وارد کنید تا اعلان نوبت‌های جدید برایتان ارسال شود.</p>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+            >
+              <Check className="w-4 h-4" /> ذخیره تنظیمات من
+            </button>
+          </form>
+
+          {/* بخش تعریف کد تخفیف اختصاصی توسط آرایشگر همراه با آمار میزان استفاده */}
+          <div className={`${c.card} border p-5 rounded-3xl space-y-3.5`}>
+            <h3 className="text-xs font-black text-amber-500 flex items-center gap-1.5">
+              <Tag className="w-4 h-4" /> تعریف کد تخفیف اختصاصی شما ({operator.name}):
+            </h3>
+
+            <div className={`flex ${c.innerCard} p-1 rounded-xl border text-[10px]`}>
+              <button
+                type="button"
+                onClick={() => { setBarberDiscountType('percent'); setBarberDiscountValue('15'); }}
+                className={`flex-1 py-1 rounded-lg font-bold transition ${barberDiscountType === 'percent' ? 'bg-amber-500 text-slate-950' : c.muted}`}
+              >
+                درصدی (٪)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setBarberDiscountType('fixed'); setBarberDiscountValue('30000'); }}
+                className={`flex-1 py-1 rounded-lg font-bold transition ${barberDiscountType === 'fixed' ? 'bg-amber-500 text-slate-950' : c.muted}`}
+              >
+                تومانی
+              </button>
+            </div>
+
+            <form onSubmit={handleBarberAddDiscount} className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="کد (مثلاً FARZAD10)"
+                  value={barberDiscountCode}
+                  onChange={(e) => setBarberDiscountCode(e.target.value)}
+                  className={`flex-1 ${c.input} border text-xs p-2.5 rounded-xl uppercase font-mono focus:outline-none`}
+                />
+                <input
+                  type="number"
+                  required
+                  placeholder={barberDiscountType === 'percent' ? 'درصد' : 'مبلغ'}
+                  value={barberDiscountValue}
+                  onChange={(e) => setBarberDiscountValue(e.target.value)}
+                  className={`w-32 ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black transition"
+              >
+                ثبت کد تخفیف اختصاصی
+              </button>
+            </form>
+
+            <div className="space-y-2 pt-2 border-t border-slate-700/50">
+              <span className="text-[11px] font-bold block text-slate-300">کدهای تخفیف شما و آمار استفاده:</span>
+              {myDiscounts.length === 0 ? (
+                <p className={`text-xs ${c.muted} text-center py-3 ${c.innerCard} rounded-xl`}>کد تخفیفی ثبت نکرده‌اید.</p>
+              ) : (
+                myDiscounts.map((d: any) => (
+                  <div key={d.code} className={`flex justify-between items-center p-2.5 ${c.innerCard} border rounded-xl text-xs`}>
+                    <div className="space-y-0.5">
+                      <span className="font-mono font-bold text-amber-400">{d.code}</span>
+                      <span className={`text-[10px] ${c.muted} block font-mono`}>
+                        ({d.type === 'fixed' ? `${Number(d.value).toLocaleString('fa-IR')} تومان` : `${d.value}٪`}) - میزان استفاده: <strong className="text-white font-mono">{d.usage_count || 0} بار</strong>
+                      </span>
+                    </div>
+                    <button onClick={() => handleDeleteDiscount(d.code)} className="text-rose-500 p-1">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className={`${c.card} border p-4 rounded-3xl`}>
               <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-bold">
@@ -1438,100 +1565,165 @@ export default function OperatorPanel() {
             </div>
           </div>
 
-          <div className={`${c.card} border p-5 rounded-3xl space-y-3`}>
-            <label className="text-xs font-bold flex items-center gap-1.5">
-              <Calendar className="w-4 h-4 text-blue-500" /> انتخاب تاریخ برای نوبت‌های من:
-            </label>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
-              {shamsiDays.map((d) => (
+          {/* بخش تقویم و شیفت‌کاری به صورت عمودی (زیر هم بدون فاصله اضافی) */}
+          <div className={`${c.card} border p-5 rounded-3xl space-y-4`}>
+            {/* انتخاب تاریخ (تقویم) */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-blue-500" /> انتخاب تاریخ برای نوبت‌های من:
+              </label>
+              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+                {shamsiDays.map((d) => (
+                  <button
+                    key={d.date}
+                    type="button"
+                    onClick={() => setSelectedDate(d.date)}
+                    className={`py-2 px-1 rounded-xl text-center text-xs border transition flex flex-col items-center justify-center ${
+                      selectedDate === d.date
+                        ? 'bg-blue-600 text-white font-black shadow-md border-transparent scale-105'
+                        : `${c.innerCard}${c.muted}`
+                    }`}
+                  >
+                    <span className="text-[10px] opacity-80">{d.weekday}</span>
+                    <span className="font-mono mt-0.5 text-xs font-black">{d.dayNum}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-xs text-slate-300 font-bold">
+                  وضعیت تاریخ {shamsiDays.find(d => d.date === selectedDate)?.label}:
+                </span>
                 <button
-                  key={d.date}
                   type="button"
-                  onClick={() => setSelectedDate(d.date)}
-                  className={`py-2 px-1 rounded-xl text-center text-xs border transition flex flex-col items-center justify-center ${
-                    selectedDate === d.date
-                      ? 'bg-blue-600 text-white font-black shadow-md border-transparent scale-105'
-                      : `${c.innerCard}${c.muted}`
+                  onClick={handleToggleOffDay}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                    (db.off_days || []).some((o: any) => o.operator_id === operator.id && o.date === selectedDate)
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-md'
+                      : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
                   }`}
                 >
-                  <span className="text-[10px] opacity-80">{d.weekday}</span>
-                  <span className="font-mono mt-0.5 text-xs font-black">{d.dayNum}</span>
+                  <Ban className="w-3.5 h-3.5" />
+                  {(db.off_days || []).some((o: any) => o.operator_id === operator.id && o.date === selectedDate)
+                    ? 'تعطیل است (کلیک برای باز کردن)'
+                    : 'تعطیل کردن این روز (مرخصی)'}
                 </button>
-              ))}
+              </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-slate-700/40">
-              <span className="text-xs text-slate-300 font-bold">
-                وضعیت تاریخ {shamsiDays.find(d => d.date === selectedDate)?.label}:
-              </span>
-              <button
-                type="button"
-                onClick={handleToggleOffDay}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
-                  (db.off_days || []).some((o: any) => o.operator_id === operator.id && o.date === selectedDate)
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-md'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-                }`}
-              >
-                <Ban className="w-3.5 h-3.5" />
-                {(db.off_days || []).some((o: any) => o.operator_id === operator.id && o.date === selectedDate)
-                  ? 'تعطیل است (کلیک برای باز کردن)'
-                  : 'تعطیل کردن این روز (مرخصی)'}
-              </button>
+            {/* خط جداکننده منظم */}
+            <div className={`border-t ${isDark ? 'border-slate-800' : 'border-slate-200'} pt-4 space-y-3`}>
+              <h3 className="text-xs font-black flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-blue-500" /> تعریف شیفت کاری جدید :
+              </h3>
+
+              <form onSubmit={handleAddInterval} className="space-y-3">
+                <div className="space-y-2.5">
+                  <div>
+                    <span className={`text-[11px] ${c.muted} block mb-1 font-bold`}>از ساعت شروع:</span>
+                    <select
+                      value={newStart}
+                      onChange={(e) => setNewStart(e.target.value)}
+                      className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none`}
+                    >
+                      {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <span className={`text-[11px] ${c.muted} block mb-1 font-bold`}>تا ساعت پایان:</span>
+                    <select
+                      value={newEnd}
+                      onChange={(e) => setNewEnd(e.target.value)}
+                      className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none`}
+                    >
+                      {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className={`w-full py-2.5 ${c.btnPrimary} rounded-xl text-xs font-bold transition flex items-center justify-center gap-1`}
+                >
+                  <Plus className="w-4 h-4" /> ذخیره شیفت
+                </button>
+              </form>
+
+              <div className="space-y-1.5 pt-2">
+                <label className="text-[11px] font-bold block">شیفت‌های من در این تاریخ:</label>
+                {myIntervalsForSelectedDate.length === 0 ? (
+                  <p className={`text-xs ${c.muted} text-center py-2 ${c.innerCard} rounded-xl`}>شیفتی ثبت نشده است.</p>
+                ) : (
+                  myIntervalsForSelectedDate.map((it: any, idx: number) => (
+                    <div key={it.id} className={`flex justify-between items-center p-2.5 ${c.innerCard} border rounded-xl text-xs`}>
+                      <span className="font-mono">شیفت {idx + 1}: از {it.start_time} تا {it.end_time}</span>
+                      <button onClick={() => handleDeleteInterval(it.id)} className="text-rose-500 p-1">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
+          {/* بخش آپلود عکس نمونه‌کار توسط آرایشگر */}
           <div className={`${c.card} border p-5 rounded-3xl space-y-3.5`}>
-            <h3 className="text-xs font-black flex items-center gap-1.5">
-              <Plus className="w-4 h-4 text-blue-500" /> تعریف شیفت کاری جدید برای من:
+            <h3 className="text-xs font-black text-purple-500 flex items-center gap-1.5">
+              <ImageIcon className="w-4 h-4" /> آپلود نمونه‌کار جدید ({operator.name}):
             </h3>
 
-            <form onSubmit={handleAddInterval} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className={`text-[11px] ${c.muted} block mb-1`}>از ساعت:</span>
-                  <select
-                    value={newStart}
-                    onChange={(e) => setNewStart(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none`}
-                  >
-                    {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <span className={`text-[11px] ${c.muted} block mb-1`}>تا ساعت:</span>
-                  <select
-                    value={newEnd}
-                    onChange={(e) => setNewEnd(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl font-mono focus:outline-none`}
-                  >
-                    {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
+            <form onSubmit={handleAddPortfolio} className="space-y-2.5">
+              <input
+                type="text"
+                placeholder="عنوان نمونه‌کار (مثال: فید کلاسیک، سایه‌زنی ریش)"
+                value={newPortfolioTitle}
+                onChange={(e) => setNewPortfolioTitle(e.target.value)}
+                className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
+              />
+
+              <div className="space-y-1">
+                <span className={`text-[11px] ${c.muted} block`}>انتخاب تصویر از گالری گوشی یا سیستم:</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className={`w-full ${c.input} border text-xs p-2 rounded-xl cursor-pointer`}
+                />
               </div>
+
+              {isCompressing && (
+                <p className="text-[11px] text-amber-500">در حال بهینه‌سازی تصویر...</p>
+              )}
+
+              {newPortfolioImage && (
+                <div className="w-24 h-24 rounded-xl overflow-hidden border border-slate-600 mt-2">
+                  <img src={newPortfolioImage} alt="پیش‌نمایش" className="w-full h-full object-cover" />
+                </div>
+              )}
 
               <button
                 type="submit"
-                className={`w-full py-2.5 ${c.btnPrimary} rounded-xl text-xs font-bold transition flex items-center justify-center gap-1`}
+                disabled={isCompressing}
+                className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
               >
-                <Plus className="w-4 h-4" /> ذخیره شیفت
+                <Plus className="w-4 h-4" /> آپلود و ارسال به گالری نمونه‌کارها
               </button>
             </form>
 
-            <div className={`pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'} space-y-1.5`}>
-              <label className="text-[11px] font-bold block">شیفت‌های من در این تاریخ:</label>
-              {myIntervalsForSelectedDate.length === 0 ? (
-                <p className={`text-xs ${c.muted} text-center py-2 ${c.innerCard} rounded-xl`}>شیفتی ثبت نشده است.</p>
-              ) : (
-                myIntervalsForSelectedDate.map((it: any, idx: number) => (
-                  <div key={it.id} className={`flex justify-between items-center p-2.5 ${c.innerCard} border rounded-xl text-xs`}>
-                    <span className="font-mono">شیفت {idx + 1}: از {it.start_time} تا {it.end_time}</span>
-                    <button onClick={() => handleDeleteInterval(it.id)} className="text-rose-500 p-1">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-700/50">
+              {myPortfolios.map((p: any) => (
+                <div key={p.id} className="relative rounded-xl overflow-hidden border border-slate-700 bg-black/40 group">
+                  <img src={p.image} alt={p.title} className="w-full h-20 object-cover" />
+                  <p className="text-[10px] font-bold p-1 truncate text-center">{p.title}</p>
+                  <button
+                    onClick={() => handleDeletePortfolio(p.id)}
+                    className="absolute top-1 left-1 bg-rose-600 text-white p-1 rounded-md opacity-80 hover:opacity-100"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -1568,7 +1760,7 @@ export default function OperatorPanel() {
 
                     <div className="text-left flex flex-col items-end gap-1">
                       <span className="font-black text-emerald-500">{Number(b.amount).toLocaleString('fa-IR')} ت</span>
-                      <button onClick={() => handleCancelBooking(b.id)} className="text-rose-500 text-[10px] hover:underline">
+                      <button type="button" onClick={() => handleCancelBooking(b.id)} className="text-rose-500 text-[10px] hover:underline cursor-pointer">
                         لغو نوبت
                       </button>
                     </div>
@@ -1576,6 +1768,68 @@ export default function OperatorPanel() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className={`${c.card} border p-5 rounded-3xl space-y-3.5`}>
+            <h3 className="text-xs font-black text-purple-500 flex items-center gap-1.5">
+              <Scissors className="w-4 h-4" /> خدمات اختصاصی من ({operator.name}):
+            </h3>
+
+            <form onSubmit={handleAddService} className="space-y-2.5">
+              <div>
+                <label className="text-[11px] block mb-1 text-slate-300 font-bold">عنوان خدمت:</label>
+                <input
+                  type="text"
+                  placeholder="مثال: اصلاح سر و فید تخصصی"
+                  value={newServiceTitle}
+                  onChange={(e) => setNewServiceTitle(e.target.value)}
+                  className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className={`text-[10px] ${c.muted} block mb-1`}>مدت (دقیقه):</span>
+                  <input
+                    type="number"
+                    value={newServiceDuration}
+                    onChange={(e) => setNewServiceDuration(e.target.value)}
+                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
+                  />
+                </div>
+                <div>
+                  <span className={`text-[10px] ${c.muted} block mb-1`}>قیمت (تومان):</span>
+                  <input
+                    type="number"
+                    value={newServicePrice}
+                    onChange={(e) => setNewServicePrice(e.target.value)}
+                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+              >
+                <Plus className="w-4 h-4" /> ذخیره در خدمات من
+              </button>
+            </form>
+
+            <div className={`pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'} space-y-1.5`}>
+              <span className="text-[11px] font-bold block mb-1">لیست خدمات فعال من:</span>
+              {myServices.map((srv: any) => (
+                <div key={srv.id} className={`flex justify-between items-center p-2.5 ${c.innerCard} border rounded-xl text-xs`}>
+                  <div>
+                    <span className="font-bold">{srv.title}</span>
+                    <span className={`text-[10px] ${c.muted} mr-2 font-mono`}>({Number(srv.duration).toLocaleString('fa-IR')} دقیقه - {Number(srv.price).toLocaleString('fa-IR')} ت)</span>
+                  </div>
+                  <button type="button" onClick={() => handleDeleteService(srv.id)} className="text-rose-500 p-1 cursor-pointer">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
         </div>

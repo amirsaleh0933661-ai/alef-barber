@@ -14,7 +14,9 @@
       "username": "farhad",
       "password": "456",
       "role": "barber",
-      "merchant_id": ""
+      "merchant_id": "",
+      "min_advance_hours": 3,
+      "bale_chat_id": "1545240903"
     },
     {
       "id": 99,
@@ -22,15 +24,6 @@
       "username": "admin",
       "password": "admin",
       "role": "developer",
-      "merchant_id": ""
-    },
-    {
-      "id": 1792235802180,
-      "name": "جواد",
-      "username": "javad",
-      "password": "789",
-      "phone": "",
-      "role": "barber",
       "merchant_id": ""
     }
   ],
@@ -107,6 +100,14 @@
       "code": "123",
       "percent": 25,
       "active": true
+    },
+    {
+      "code": "ASD",
+      "type": "percent",
+      "value": 15,
+      "operator_id": 2,
+      "usage_count": 0,
+      "active": true
     }
   ],
   "slots": [
@@ -133,6 +134,24 @@
     }
   ],
   "bookings": [
+    {
+      "id": "bk_1794992234458",
+      "operator_id": 2,
+      "operator_name": "فرهاد",
+      "date": "1405/08/27",
+      "start_time": "17:00",
+      "end_time": "17:45",
+      "duration": 45,
+      "customer_name": "علی",
+      "customer_phone": "09012345678",
+      "services": [
+        "کوپ و استایل مدرن فشن"
+      ],
+      "discount_applied": null,
+      "amount": 220000,
+      "payment_status": "PENDING_PAYMENT",
+      "created_at": "2026-11-18T08:57:14.486Z"
+    },
     {
       "id": "bk_1794938949200",
       "operator_id": 1,
@@ -311,6 +330,13 @@
       "date": "1405/08/26",
       "start_time": "15:30",
       "end_time": "23:30"
+    },
+    {
+      "id": "int_1794992135128",
+      "operator_id": 2,
+      "date": "1405/08/27",
+      "start_time": "14:00",
+      "end_time": "23:30"
     }
   ],
   "current_theme": "dark",
@@ -325,7 +351,8 @@
     "install_prompt_text": "اگه نمی‌خوای هرسری دنبال لینک نگردی، برنامه رو نصب کن تا با یک لمس همیشه روی صفحه گوشیت باشه!",
     "arrival_rule": "زمان نوبت تقریبی است؛ لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن الف حضور داشته باشید.",
     "cancellation_rule": "در صورت انصراف یا نیاز به جابجایی ساعت، لطفاً حداقل ۳ ساعت قبل اطلاع دهید تا حق نوبت سایر مراجعین محفوظ بماند.",
-    "tcart_api_key": "sk_JrmQwmPZDep0JuEDejFVuUQuQYDP9LWPmoGcUhbQ1Wk"
+    "tcart_api_key": "sk_JrmQwmPZDep0JuEDejFVuUQuQYDP9LWPmoGcUhbQ1Wk",
+    "bale_bot_token": "1548765716:CzJDzh3MI5W2bH8s1wwqEPQ-UUIv4UwtDns"
   },
   "portfolios": [
     {

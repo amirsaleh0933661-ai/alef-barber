@@ -40,7 +40,33 @@ async function getDb() {
       return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     }
   } catch (e) {}
-  return { bookings: [], salon_info: {}, operators: [], services: [], intervals: [], discounts: [], off_days: [] };
+  return { 
+    bookings: [], 
+    salon_info: { 
+      name: 'سالن پیرایش الف', 
+      phone: '09120000000', 
+      address: 'تهران، خیابان ولیعصر، پلاک ۱۲۳', 
+      instagram: 'alef_salon', 
+      map_url: 'https://maps.google.com', 
+      arrival_rule: 'لطفاً ۵ دقیقه قبل در سالن حضور داشته باشید.', 
+      cancellation_rule: 'کنسلی نوبت تا ۳ ساعت قبل امکان‌پذیر است.',
+      tcart_api_key: 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38',
+      bale_bot_token: ''
+    }, 
+    operators: [
+      { id: 1, name: 'فرزاد', username: 'farzad', password: '123', phone: '09121111111', instagram: 'farzad_barber', min_advance_hours: 3, bale_chat_id: '', role: 'barber' },
+      { id: 2, name: 'فرهاد', username: 'farhad', password: '456', phone: '09122222222', instagram: 'farhad_barber', min_advance_hours: 3, bale_chat_id: '', role: 'barber' },
+      { id: 99, name: 'برنامه‌نویس و مدیر کل', username: 'admin', password: 'admin', phone: '', role: 'developer' }
+    ], 
+    services: [], 
+    portfolios: [], 
+    intervals: [], 
+    discounts: [
+      { code: 'ALEF20', type: 'percent', value: 20, active: true, operator_id: null, usage_count: 0 },
+      { code: 'FARZAD10', type: 'percent', value: 10, active: true, operator_id: 1, usage_count: 0 }
+    ], 
+    off_days: [] 
+  };
 }
 
 async function saveDb(data: any) {
@@ -56,13 +82,30 @@ async function saveDb(data: any) {
   } catch (e) {}
 }
 
+async function sendBaleNotification(db: any, operatorId: number, bookingDetails: any) {
+  try {
+    const token = db.salon_info?.bale_bot_token;
+    const op = (db.operators || []).find((o: any) => o.id === Number(operatorId));
+    if (!token || !op || !op.bale_chat_id) return;
+
+    const message = `🔔 نوبت جدید در سالن ثبت شد!\n\n👤 مشتری: ${bookingDetails.customer_name}\n📞 شماره تماس: ${bookingDetails.customer_phone}\n✂️ خدمات: ${(bookingDetails.services || []).join('، ')}\n⏰ ساعت رزرو: ${bookingDetails.start_time} (تاریخ: ${bookingDetails.date})\n💰 مبلغ پرداختی: ${Number(bookingDetails.amount).toLocaleString('fa-IR')} تومان`;
+
+    await fetch(`https://tapi.bale.ai/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: op.bale_chat_id,
+        text: message
+      })
+    });
+  } catch (e) {
+    console.error('Bale notification error:', e);
+  }
+}
+
 export async function GET(req: Request) {
   const db = await getDb();
-  const filteredDb = {
-    ...db,
-    bookings: (db.bookings || []).filter((b: any) => b.payment_status === 'PAID')
-  };
-  return NextResponse.json(filteredDb, {
+  return NextResponse.json(db, {
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
   });
 }
@@ -75,91 +118,241 @@ export async function POST(req: Request) {
     if (body.action === 'check_booking_status') {
       const bookingId = body.booking_id;
       const booking = (db.bookings || []).find((b: any) => b.id === bookingId || b.ref_id === bookingId);
-      
       if (!booking) return NextResponse.json({ found: false });
-
       if (booking.payment_status === 'PAID') {
         return NextResponse.json({ found: true, paid: true, booking });
       }
-
-      if (booking.payment_status === 'PENDING_PAYMENT' && booking.ref_id) {
-        try {
-          const tcartApiKey = db.salon_info?.tcart_api_key || process.env.TCART_API_KEY || 'sk_AmPTCVFuTeH5K3xnnae5YaZIhq3Mrrdr9nCbMpU0k38';
-          const tcartCheckRes = await fetch(`https://tcartt.com/api/v1/invoices?tracking_code=${booking.ref_id}`, {
-            headers: {
-              'Authorization': `Bearer ${tcartApiKey}`,
-              'Accept': 'application/json'
-            }
-          });
-          
-          if (tcartCheckRes.ok) {
-            const tcartCheckData = await tcartCheckRes.json();
-            if (tcartCheckData && (tcartCheckData.status === 'paid' || tcartCheckData.is_paid || tcartCheckData.paid)) {
-              booking.payment_status = 'PAID';
-              await saveDb(db);
-              return NextResponse.json({ found: true, paid: true, booking });
-            }
-          }
-        } catch (e) {}
-      }
-
       return NextResponse.json({ found: true, paid: false });
     }
 
-    // ثبت دستی کد پرداخت توسط کاربر (اگر کد تراکنش یا فیش داشت)
     if (body.action === 'submit_manual_payment_code') {
       const { booking_id, manual_ref } = body;
       const booking = (db.bookings || []).find((b: any) => b.id === booking_id);
       if (booking) {
         booking.payment_status = 'PAID';
         booking.ref_id = manual_ref?.trim() || booking.ref_id;
+        
+        if (booking.discount_applied) {
+          db.discounts = db.discounts || [];
+          const disc = db.discounts.find((d: any) => d.code === booking.discount_applied);
+          if (disc) {
+            disc.usage_count = (disc.usage_count || 0) + 1;
+          }
+        }
+
         await saveDb(db);
+        await sendBaleNotification(db, booking.operator_id, booking);
+
         return NextResponse.json({ success: true, booking });
       }
       return NextResponse.json({ error: 'سفارش یافت نشد.' }, { status: 404 });
     }
 
-    if (body.action === 'confirm_paid_booking') {
-      const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id || b.ref_id === body.tracking_code);
-      if (booking) {
-        booking.payment_status = 'PAID';
-        await saveDb(db);
-        return NextResponse.json({ success: true, booking });
+    // اصلاح کامل بخش لغو نوبت جهت تطبیق شناسه و کد پیگیری بدون خطا
+    if (body.action === 'cancel_booking' || body.action === 'cancel_booking_by_customer') {
+      const bId = body.booking_id || body.code;
+      if (!bId) {
+        return NextResponse.json({ error: 'شناسه یا کد نوبت ارسال نشده است.' }, { status: 400 });
       }
-      return NextResponse.json({ error: 'سفارش یافت نشد' }, { status: 404 });
-    }
 
-    if (body.action === 'cancel_booking_by_customer') {
-      const code = body.code?.trim().toUpperCase();
-      const idx = (db.bookings || []).findIndex((b: any) => (b.ref_id?.toUpperCase() === code || b.id?.toUpperCase() === code) && b.payment_status === 'PAID');
-      if (idx === -1) return NextResponse.json({ error: 'یافت نشد' }, { status: 404 });
+      const cleanCode = String(bId).trim().toUpperCase();
+      db.bookings = db.bookings || [];
+      
+      const idx = db.bookings.findIndex((b: any) => {
+        const idMatch = b.id && String(b.id).trim().toUpperCase() === cleanCode;
+        const refMatch = b.ref_id && String(b.ref_id).trim().toUpperCase() === cleanCode;
+        return idMatch || refMatch;
+      });
+      
+      if (idx === -1) {
+        return NextResponse.json({ error: 'نوبتی با این مشخصات یافت نشد.' }, { status: 404 });
+      }
+      
       const target = db.bookings[idx];
-      const op = db.operators.find((o: any) => o.id === target.operator_id);
+      const op = (db.operators || []).find((o: any) => o.id === target.operator_id);
+      
+      // حذف قطعی نوبت از آرایه bookings
       db.bookings.splice(idx, 1);
       await saveDb(db);
-      return NextResponse.json({ success: true, operator_name: op?.name || 'آرایشگر', operator_phone: op?.phone || '', date: target.date, time: target.start_time });
+      
+      return NextResponse.json({ 
+        success: true, 
+        operator_name: op?.name || 'آرایشگر', 
+        operator_phone: op?.phone || '', 
+        date: target.date, 
+        time: target.start_time 
+      });
+    }
+
+    if (body.action === 'update_salon_info') {
+      db.salon_info = {
+        ...db.salon_info,
+        name: body.name ?? db.salon_info.name,
+        phone: body.phone ?? db.salon_info.phone,
+        address: body.address ?? db.salon_info.address,
+        instagram: body.instagram ?? db.salon_info.instagram,
+        map_url: body.map_url ?? db.salon_info.map_url,
+        arrival_rule: body.arrival_rule ?? db.salon_info.arrival_rule,
+        cancellation_rule: body.cancellation_rule ?? db.salon_info.cancellation_rule,
+        tcart_api_key: body.tcart_api_key ?? db.salon_info.tcart_api_key,
+        bale_bot_token: body.bale_bot_token ?? db.salon_info.bale_bot_token
+      };
+      await saveDb(db);
+      return NextResponse.json({ success: true, salon_info: db.salon_info });
+    }
+
+    if (body.action === 'add_operator') {
+      const { name, username, password, phone } = body;
+      db.operators = db.operators || [];
+      const newOp = {
+        id: Date.now(),
+        name: name.trim(),
+        username: username.trim().toLowerCase(),
+        password: password.trim(),
+        phone: phone ? phone.trim() : '',
+        instagram: '',
+        min_advance_hours: 3,
+        bale_chat_id: '',
+        role: 'barber'
+      };
+      db.operators.push(newOp);
+      await saveDb(db);
+      return NextResponse.json({ success: true, operator: newOp });
+    }
+
+    if (body.action === 'delete_operator') {
+      const opId = Number(body.operator_id);
+      db.operators = (db.operators || []).filter((o: any) => o.id !== opId);
+      db.services = (db.services || []).filter((s: any) => s.operator_id !== opId);
+      db.portfolios = (db.portfolios || []).filter((p: any) => p.operator_id !== opId);
+      db.intervals = (db.intervals || []).filter((i: any) => i.operator_id !== opId);
+      db.discounts = (db.discounts || []).filter((d: any) => d.operator_id !== opId);
+      await saveDb(db);
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'update_operator_profile') {
+      const { operator_id, phone, instagram, min_advance_hours, bale_chat_id } = body;
+      const op = (db.operators || []).find((o: any) => o.id === Number(operator_id));
+      if (op) {
+        if (phone !== undefined) op.phone = phone.trim();
+        if (instagram !== undefined) op.instagram = instagram.trim().replace('@', '');
+        if (min_advance_hours !== undefined) op.min_advance_hours = Number(min_advance_hours) || 0;
+        if (bale_chat_id !== undefined) op.bale_chat_id = bale_chat_id.trim();
+        await saveDb(db);
+        return NextResponse.json({ success: true, operator: op });
+      }
+      return NextResponse.json({ error: 'آرایشگر یافت نشد' }, { status: 404 });
+    }
+
+    if (body.action === 'add_discount') {
+      const { code, type, value, operator_id } = body;
+      db.discounts = db.discounts || [];
+      const cleanCode = code.trim().toUpperCase();
+      const existingIdx = db.discounts.findIndex((d: any) => d.code === cleanCode);
+      const newDisc = { 
+        code: cleanCode, 
+        type: type || 'percent', 
+        value: Number(value) || 0, 
+        operator_id: operator_id ? Number(operator_id) : null, 
+        usage_count: existingIdx >= 0 ? (db.discounts[existingIdx].usage_count || 0) : 0,
+        active: true 
+      };
+      if (existingIdx >= 0) {
+        db.discounts[existingIdx] = { ...db.discounts[existingIdx], ...newDisc };
+      } else {
+        db.discounts.push(newDisc);
+      }
+      await saveDb(db);
+      return NextResponse.json({ success: true, discounts: db.discounts });
+    }
+
+    if (body.action === 'delete_discount') {
+      db.discounts = (db.discounts || []).filter((d: any) => d.code !== body.code);
+      await saveDb(db);
+      return NextResponse.json({ success: true, discounts: db.discounts });
+    }
+
+    if (body.action === 'add_portfolio') {
+      const { operator_id, title, image } = body;
+      db.portfolios = db.portfolios || [];
+      const newPort = { id: 'p_' + Date.now(), operator_id: Number(operator_id), title, image };
+      db.portfolios.unshift(newPort);
+      await saveDb(db);
+      return NextResponse.json({ success: true, portfolio: newPort });
+    }
+
+    if (body.action === 'delete_portfolio') {
+      db.portfolios = (db.portfolios || []).filter((p: any) => p.id !== body.portfolio_id);
+      await saveDb(db);
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'add_service') {
+      const { operator_id, title, duration, price } = body;
+      db.services = db.services || [];
+      const newSrv = { id: 'srv_' + Date.now(), operator_id: Number(operator_id), title, duration: Number(duration), price: Number(price) };
+      db.services.push(newSrv);
+      await saveDb(db);
+      return NextResponse.json({ success: true, service: newSrv });
+    }
+
+    if (body.action === 'delete_service') {
+      db.services = (db.services || []).filter((s: any) => s.id !== body.service_id);
+      await saveDb(db);
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'add_interval') {
+      const { operator_id, date, start_time, end_time } = body;
+      db.intervals = db.intervals || [];
+      const newInt = { id: 'int_' + Date.now(), operator_id: Number(operator_id), date, start_time, end_time };
+      db.intervals.push(newInt);
+      await saveDb(db);
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'delete_interval') {
+      db.intervals = (db.intervals || []).filter((i: any) => i.id !== body.interval_id);
+      await saveDb(db);
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'toggle_off_day') {
+      const { operator_id, date } = body;
+      db.off_days = db.off_days || [];
+      const idx = db.off_days.findIndex((o: any) => o.operator_id === Number(operator_id) && o.date === date);
+      let is_off = false;
+      if (idx >= 0) {
+        db.off_days.splice(idx, 1);
+        is_off = false;
+      } else {
+        db.off_days.push({ operator_id: Number(operator_id), date });
+        is_off = true;
+      }
+      await saveDb(db);
+      return NextResponse.json({ success: true, is_off });
+    }
+
+    if (body.action === 'change_password') {
+      const { operator_id, old_password, new_password } = body;
+      const op = (db.operators || []).find((o: any) => o.id === Number(operator_id));
+      if (op && op.password === old_password) {
+        op.password = new_password.trim();
+        await saveDb(db);
+        return NextResponse.json({ success: true });
+      }
+      return NextResponse.json({ error: 'رمز عبور فعلی اشتباه است' }, { status: 400 });
+    }
+
+    if (body.action === 'reset_all_bookings') {
+      db.bookings = [];
+      await saveDb(db);
+      return NextResponse.json({ success: true });
     }
 
     if (body.action === 'request_card_payment') {
       const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount, booking_id } = body;
-      
-      // بررسی قانون حداقل ۳ ساعت مانده به نوبت
-      const now = new Date();
-      const isToday = true; // فرضیه بررسی تاریخ امروز
-      // اگر تاریخ امروز است، اختلاف ساعت را چک میکنیم
-      // برای سادگی، محاسبه دقیق زمان بر اساس رشته تاریخ و ساعت
-      const [shYear, shMonth, shDay] = date.split('/').map(Number);
-      // تبدیل تاریخ شمسی به میلادی به صورت تقریبی یا مقایسه دقیق ساعت
-      const [targetH, targetM] = start_time.split(':').map(Number);
-      
-      // ساخت شیء زمان نوبت (به صورت منطقی مقایسه می‌کنیم)
-      const targetTimeMins = targetH * 60 + targetM;
-      const currentTotalMins = now.getHours() * 60 + now.getMinutes();
-
-      // اگر نوبت برای امروز است، بررسی میکنیم حداقل ۳ ساعت (۱۸۰ دقیقه) فاصله داشته باشد
-      // برای سادگی اگر تاریخ مطابقت داشت و فاصله کمتر از ۱۸۰ دقیقه بود خطا میدهیم
-      // (توجه: در صورت نیاز به بررسی دقیق روزهای آینده، مقایسه کامل تاریخ انجام میشود)
-
       const opId = Number(operator_id) || 1;
       const op = db.operators.find((o: any) => o.id === opId);
       const barberName = op?.name || 'آرایشگر';
@@ -168,23 +361,7 @@ export async function POST(req: Request) {
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      const pendingBooking: {
-        id: any;
-        operator_id: number;
-        operator_name: any;
-        date: any;
-        start_time: any;
-        end_time: string;
-        duration: number;
-        customer_name: any;
-        customer_phone: any;
-        services: any;
-        discount_applied: any;
-        amount: number;
-        payment_status: string;
-        created_at: string;
-        ref_id?: string;
-      } = {
+      const pendingBooking: any = {
         id: booking_id,
         operator_id: opId,
         operator_name: barberName,
