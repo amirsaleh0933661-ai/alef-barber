@@ -88,7 +88,7 @@ async function sendBaleNotification(db: any, operatorId: number, bookingDetails:
     const op = (db.operators || []).find((o: any) => o.id === Number(operatorId));
     if (!token || !op || !op.bale_chat_id) return;
 
-    const message = `🔔 نوبت جدید در سالن ثبت شد!\n\n👤 مشتری: ${bookingDetails.customer_name}\n📞 شماره تماس: ${bookingDetails.customer_phone}\n✂️ خدمات: ${(bookingDetails.services || []).join('، ')}\n⏰ ساعت رزرو: ${bookingDetails.start_time} (تاریخ: ${bookingDetails.date})\n💰 مبلغ پرداختی: ${Number(bookingDetails.amount).toLocaleString('fa-IR')} تومان`;
+    const message = `🔔 نوبت جدید و موفق در سالن ثبت شد!\n\n👤 مشتری: ${bookingDetails.customer_name}\n📞 شماره تماس: ${bookingDetails.customer_phone}\n✂️ خدمات: ${(bookingDetails.services || []).join('، ')}\n📅 تاریخ: ${bookingDetails.date}\n⏰ ساعت رزرو: ${bookingDetails.start_time} الی ${bookingDetails.end_time}\n💰 مبلغ پرداختی: ${Number(bookingDetails.amount).toLocaleString('fa-IR')} تومان`;
 
     await fetch(`https://tapi.bale.ai/bot${token}/sendMessage`, {
       method: 'POST',
@@ -119,7 +119,9 @@ export async function POST(req: Request) {
       const bookingId = body.booking_id;
       const booking = (db.bookings || []).find((b: any) => b.id === bookingId || b.ref_id === bookingId);
       if (!booking) return NextResponse.json({ found: false });
+      
       if (booking.payment_status === 'PAID') {
+        // اگر وضعیت تایید شد و پیام قبلاً فرستاده نشده بود، ارسال کن
         return NextResponse.json({ found: true, paid: true, booking });
       }
       return NextResponse.json({ found: true, paid: false });
@@ -141,6 +143,8 @@ export async function POST(req: Request) {
         }
 
         await saveDb(db);
+        
+        // ارسال اعلان بله دقیقاً بعد از تأیید پرداخت
         await sendBaleNotification(db, booking.operator_id, booking);
 
         return NextResponse.json({ success: true, booking });
@@ -148,7 +152,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'سفارش یافت نشد.' }, { status: 404 });
     }
 
-    // اصلاح کامل بخش لغو نوبت جهت تطبیق شناسه و کد پیگیری بدون خطا
     if (body.action === 'cancel_booking' || body.action === 'cancel_booking_by_customer') {
       const bId = body.booking_id || body.code;
       if (!bId) {
@@ -171,7 +174,6 @@ export async function POST(req: Request) {
       const target = db.bookings[idx];
       const op = (db.operators || []).find((o: any) => o.id === target.operator_id);
       
-      // حذف قطعی نوبت از آرایه bookings
       db.bookings.splice(idx, 1);
       await saveDb(db);
       
