@@ -6,7 +6,7 @@ import {
   AlertCircle, CheckCircle2, Scissors, Timer, Info, Share2, Copy, 
   X, Sun, Moon, Phone, MapPin, CreditCard, Lock, Image as ImageIcon, Ban,
   Download, ArrowLeft, Smartphone, Share, PlusSquare, Search, AlertTriangle, Trash2, RefreshCw,
-  Globe, MessageCircle, Navigation, Instagram, ExternalLink, MapPinned,
+  Globe, MessageCircle, Navigation, ExternalLink, MapPinned
 } from 'lucide-react';
 
 function InstagramSvg({ className = "w-4 h-4" }: { className?: string }) {
@@ -346,7 +346,6 @@ export default function BookingPage() {
   const availableBarbers = (db.operators || []).filter((o: any) => o.role !== 'developer');
   const currentOp = availableBarbers.find((o: any) => o.id === operatorId) || availableBarbers[0] || { name: 'فرزاد' };
   
-  // شماره تماس و اینستاگرام اختصاصی آرایشگر منتخب
   const salonPhone = currentOp?.phone || salon.phone || '';
   const salonInstagram = currentOp?.instagram || salon.instagram || '';
   const salonWhatsapp = salon.whatsapp || salon.whatsapp_number || salonPhone;
@@ -912,7 +911,7 @@ export default function BookingPage() {
 
         {/* مشخصات مراجع و پرداخت */}
         {selectedStartTime && !isSelectedDateOff && (
-          <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-2xl space-y-4 animate-fadeIn`}>
+          <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-3xl space-y-4 animate-fadeIn`}>
             <h3 className={`text-xs font-black ${c.text}`}>مشخصات مراجع:</h3>
             <div className="space-y-3">
               <input type="text" required placeholder="نام و نام خانوادگی" value={name} onChange={(e) => setName(e.target.value)} className={`w-full ${c.input} border text-xs p-3 rounded-xl focus:outline-none`} />
