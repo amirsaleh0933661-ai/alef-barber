@@ -996,9 +996,7 @@ export default function OperatorPanel() {
                   className={`w-full ${c.input} border text-xs p-3 rounded-xl font-mono focus:outline-none`}
                 />
                 <span className="text-[11px] text-slate-400 block mt-1.5 leading-relaxed">
-                  • کلید API خود را از پنل تیکارت (بخش توسعه‌دهنده) کپی کرده و اینجا وارد کنید تا پرداخت‌ها روی حساب شما ست شود.
-                  <br />
-                  • حتماً از فعال بودن اشتراک و ثبت کارت بانکی در پنل tcartt.com اطمینان حاصل فرمایید.
+                  • کلید API خود را از پنل تیکارت کپی کرده و اینجا وارد کنید تا پرداخت‌ها روی حساب شما ست شود.
                 </span>
               </div>
 
@@ -1041,7 +1039,16 @@ export default function OperatorPanel() {
               <h3 className="text-xs font-black flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-blue-500" /> سهم پرسنل از مراجعین امروز
               </h3>
-              <span className={`text-[11px] ${c.muted} font-mono`}>{todayDate}</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] ${c.muted} font-mono`}>{todayDate}</span>
+                <button
+                  onClick={loadData}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                  title="بروزرسانی زنده"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
             {salonAnalytics.totalTodayClients === 0 ? (
@@ -1084,7 +1091,7 @@ export default function OperatorPanel() {
           <div className={`${c.card} border p-5 rounded-3xl space-y-3`}>
             <div className="flex justify-between items-center">
               <h3 className="text-xs font-black">ترتیب نوبت‌های امروز سالن:</h3>
-              <button onClick={loadData} className="text-blue-500">
+              <button onClick={loadData} className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1183,7 +1190,7 @@ export default function OperatorPanel() {
               </div>
 
               <div>
-                <label className="text-[11px] block mb-1 font-bold text-slate-300">شماره تماس مستقیم (جهت نمایش به مشتری):</label>
+                <label className="text-[11px] block mb-1 font-bold text-slate-300">شماره تماس مستقیم:</label>
                 <input
                   type="text"
                   placeholder="مثال: 09123456789"
@@ -1218,9 +1225,6 @@ export default function OperatorPanel() {
                       <div className="text-[11px] text-emerald-400 font-mono mt-1">
                         تلفن مستقیم: {op.phone || 'ثبت نشده'}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                        رمز ورود: {op.password}
-                      </div>
                     </div>
 
                     <button
@@ -1244,7 +1248,7 @@ export default function OperatorPanel() {
             <div className="flex items-center gap-2 pb-2 border-b border-slate-700/50">
               <Sliders className="w-5 h-5 text-amber-400" />
               <div>
-                <h3 className="text-sm font-black text-white">تنظیمات کارت شیشه‌ای، دکمه‌ها و متن‌های قوانین رسید</h3>
+                <h3 className="text-sm font-black text-white">تنظیمات کارت شیشه‌ای و قوانین رسید</h3>
                 <p className="text-[11px] text-slate-400">انحصاری برای اکانت برنامه‌نویس</p>
               </div>
             </div>
@@ -1262,7 +1266,7 @@ export default function OperatorPanel() {
 
               <div>
                 <label className="text-[11px] block mb-1 font-bold text-amber-400 flex items-center gap-1">
-                  <Home className="w-3.5 h-3.5" /> آدرس دقیق متنی سالن الف (نمایش در کارت شیشه‌ای):
+                  <Home className="w-3.5 h-3.5" /> آدرس دقیق متنی سالن الف:
                 </label>
                 <textarea
                   rows={2}
@@ -1308,12 +1312,9 @@ export default function OperatorPanel() {
                 </span>
 
                 <div>
-                  <label className="text-[11px] block mb-1 font-bold text-slate-300">
-                    متن قانون زمان حضور مراجع (چند دقیقه زودتر تشریف بیاورند):
-                  </label>
+                  <label className="text-[11px] block mb-1 font-bold text-slate-300">متن قانون زمان حضور مراجع:</label>
                   <textarea
                     rows={2}
-                    placeholder="مثال: زمان نوبت تقریبی است؛ لطفاً ۵ الی ۱۰ دقیقه قبل در سالن الف حضور داشته باشید."
                     value={arrivalRuleInput}
                     onChange={(e) => setArrivalRuleInput(e.target.value)}
                     className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none leading-relaxed`}
@@ -1321,12 +1322,9 @@ export default function OperatorPanel() {
                 </div>
 
                 <div>
-                  <label className="text-[11px] block mb-1 font-bold text-slate-300">
-                    متن قانون کنسلی یا جابجایی نوبت (چند ساعت زودتر اطلاع دهند):
-                  </label>
+                  <label className="text-[11px] block mb-1 font-bold text-slate-300">متن قانون کنسلی یا جابجایی نوبت:</label>
                   <textarea
                     rows={2}
-                    placeholder="مثال: در صورت انصراف یا نیاز به تغییر ساعت، لطفاً حداقل ۳ ساعت قبل هماهنگ فرمایید تا حق نوبت سایر مراجعین محفوظ بماند."
                     value={cancellationRuleInput}
                     onChange={(e) => setCancellationRuleInput(e.target.value)}
                     className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none leading-relaxed`}
@@ -1365,7 +1363,7 @@ export default function OperatorPanel() {
                     discountType === 'fixed' ? 'bg-amber-500 text-slate-950' : c.muted
                   }`}
                 >
-                  تومانی (مبلغی)
+                  تومانی
                 </button>
               </div>
             </div>
@@ -1383,7 +1381,7 @@ export default function OperatorPanel() {
                 <input
                   type="number"
                   required
-                  placeholder={discountType === 'percent' ? 'درصد' : 'مبلغ به تومان'}
+                  placeholder={discountType === 'percent' ? 'درصد' : 'مبلغ'}
                   value={newDiscountValue}
                   onChange={(e) => setNewDiscountValue(e.target.value)}
                   className={`w-32 ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
@@ -1393,7 +1391,7 @@ export default function OperatorPanel() {
                 type="submit"
                 className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black transition"
               >
-                ایجاد کد تخفیف {discountType === 'percent' ? 'درصدی' : 'تومانی'}
+                ایجاد کد تخفیف
               </button>
             </form>
 
@@ -1540,7 +1538,11 @@ export default function OperatorPanel() {
           <div className={`${c.card} border p-5 rounded-3xl space-y-3`}>
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold">مراجعین من در تاریخ انتخابی:</span>
-              <button onClick={loadData} className="text-blue-500">
+              <button
+                onClick={loadData}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                title="رفرش لیست نوبت‌ها"
+              >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1562,7 +1564,6 @@ export default function OperatorPanel() {
                       </div>
                       <div className={`text-[11px] ${c.muted} font-mono mt-1`}>تماس: {b.customer_phone}</div>
                       <div className={`text-[10px] ${c.muted} mt-0.5`}>خدمات: {(b.services || []).join('، ')}</div>
-                      <div className="text-[10px] text-amber-500 font-mono mt-0.5">پیگیری: {b.ref_id}</div>
                     </div>
 
                     <div className="text-left flex flex-col items-end gap-1">
@@ -1575,158 +1576,6 @@ export default function OperatorPanel() {
                 ))}
               </div>
             )}
-          </div>
-
-          <div className={`${c.card} border p-5 rounded-3xl space-y-3.5`}>
-            <h3 className="text-xs font-black text-blue-500 flex items-center gap-1.5">
-              <ImageIcon className="w-4 h-4" /> آپلود نمونه‌کار اختصاصی {operator.name}:
-            </h3>
-
-            <form onSubmit={handleAddPortfolio} className="space-y-2.5">
-              <input
-                type="text"
-                placeholder="عنوان نمونه‌کار (مثال: فید کلاسیک، سایه‌زنی ریش)"
-                value={newPortfolioTitle}
-                onChange={(e) => setNewPortfolioTitle(e.target.value)}
-                className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
-              />
-
-              <div className="space-y-1">
-                <span className={`text-[11px] ${c.muted} block`}>انتخاب تصویر از گالری گوشی یا سیستم:</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className={`w-full ${c.input} border text-xs p-2 rounded-xl cursor-pointer`}
-                />
-              </div>
-
-              {isCompressing && (
-                <p className="text-[11px] text-amber-500">در حال بهینه‌سازی تصویر...</p>
-              )}
-
-              {newPortfolioImage && (
-                <div className="w-24 h-24 rounded-xl overflow-hidden border border-slate-600 mt-2">
-                  <img src={newPortfolioImage} alt="پیش‌نمایش" className="w-full h-full object-cover" />
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isCompressing}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
-              >
-                <Plus className="w-4 h-4" /> ذخیره در نمونه‌کارهای من
-              </button>
-            </form>
-
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-700/50">
-              {myPortfolios.map((p: any) => (
-                <div key={p.id} className="relative rounded-xl overflow-hidden border border-slate-700 bg-black/40 group">
-                  <img src={p.image} alt={p.title} className="w-full h-20 object-cover" />
-                  <p className="text-[10px] font-bold p-1 truncate text-center">{p.title}</p>
-                  <button
-                    onClick={() => handleDeletePortfolio(p.id)}
-                    className="absolute top-1 left-1 bg-rose-600 text-white p-1 rounded-md opacity-80 hover:opacity-100"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={`${c.card} border p-5 rounded-3xl space-y-3.5`}>
-            <h3 className="text-xs font-black text-purple-500 flex items-center gap-1.5">
-              <Scissors className="w-4 h-4" /> خدمات اختصاصی من ({operator.name}):
-            </h3>
-
-            <form onSubmit={handleAddService} className="space-y-2.5">
-              <div>
-                <label className="text-[11px] block mb-1 text-slate-300 font-bold">عنوان خدمت:</label>
-                <input
-                  type="text"
-                  placeholder="مثال: اصلاح سر و فید تخصصی"
-                  value={newServiceTitle}
-                  onChange={(e) => setNewServiceTitle(e.target.value)}
-                  className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className={`text-[10px] ${c.muted} block mb-1`}>مدت (دقیقه):</span>
-                  <input
-                    type="number"
-                    value={newServiceDuration}
-                    onChange={(e) => setNewServiceDuration(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
-                  />
-                </div>
-                <div>
-                  <span className={`text-[10px] ${c.muted} block mb-1`}>قیمت (تومان):</span>
-                  <input
-                    type="number"
-                    value={newServicePrice}
-                    onChange={(e) => setNewServicePrice(e.target.value)}
-                    className={`w-full ${c.input} border text-xs p-2.5 rounded-xl text-center focus:outline-none`}
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
-              >
-                <Plus className="w-4 h-4" /> ذخیره در خدمات من
-              </button>
-            </form>
-
-            <div className={`pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'} space-y-1.5`}>
-              <span className="text-[11px] font-bold block mb-1">لیست خدمات فعال من:</span>
-              {myServices.map((srv: any) => (
-                <div key={srv.id} className={`flex justify-between items-center p-2.5 ${c.innerCard} border rounded-xl text-xs`}>
-                  <div>
-                    <span className="font-bold">{srv.title}</span>
-                    <span className={`text-[10px] ${c.muted} mr-2 font-mono`}>({Number(srv.duration).toLocaleString('fa-IR')} دقیقه - {Number(srv.price).toLocaleString('fa-IR')} ت)</span>
-                  </div>
-                  <button onClick={() => handleDeleteService(srv.id)} className="text-rose-500 p-1">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={`${c.card} border p-5 rounded-3xl space-y-3`}>
-            <h3 className={`text-xs font-black flex items-center gap-1.5 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              <KeyRound className="w-4 h-4 text-blue-500" /> تغییر رمز عبور حساب من ({operator.name}):
-            </h3>
-
-            <form onSubmit={handleChangePassword} className="space-y-2.5">
-              <input
-                type="password"
-                required
-                placeholder="رمز عبور فعلی شما"
-                value={oldPasswordInput}
-                onChange={(e) => setOldPasswordInput(e.target.value)}
-                className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
-              />
-              <input
-                type="password"
-                required
-                placeholder="رمز عبور جدید"
-                value={newPasswordInput}
-                onChange={(e) => setNewPasswordInput(e.target.value)}
-                className={`w-full ${c.input} border text-xs p-2.5 rounded-xl focus:outline-none`}
-              />
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <Check className="w-4 h-4" /> ذخیره رمز عبور جدید
-              </button>
-            </form>
           </div>
 
         </div>

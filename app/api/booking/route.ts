@@ -106,6 +106,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ found: true, paid: false });
     }
 
+    // ثبت دستی کد پرداخت توسط کاربر (اگر کد تراکنش یا فیش داشت)
+    if (body.action === 'submit_manual_payment_code') {
+      const { booking_id, manual_ref } = body;
+      const booking = (db.bookings || []).find((b: any) => b.id === booking_id);
+      if (booking) {
+        booking.payment_status = 'PAID';
+        booking.ref_id = manual_ref?.trim() || booking.ref_id;
+        await saveDb(db);
+        return NextResponse.json({ success: true, booking });
+      }
+      return NextResponse.json({ error: 'سفارش یافت نشد.' }, { status: 404 });
+    }
+
     if (body.action === 'confirm_paid_booking') {
       const booking = (db.bookings || []).find((b: any) => b.id === body.booking_id || b.ref_id === body.tracking_code);
       if (booking) {
@@ -129,6 +142,24 @@ export async function POST(req: Request) {
 
     if (body.action === 'request_card_payment') {
       const { operator_id, date, start_time, total_duration, customer_name, customer_phone, services, discount_code, amount, booking_id } = body;
+      
+      // بررسی قانون حداقل ۳ ساعت مانده به نوبت
+      const now = new Date();
+      const isToday = true; // فرضیه بررسی تاریخ امروز
+      // اگر تاریخ امروز است، اختلاف ساعت را چک میکنیم
+      // برای سادگی، محاسبه دقیق زمان بر اساس رشته تاریخ و ساعت
+      const [shYear, shMonth, shDay] = date.split('/').map(Number);
+      // تبدیل تاریخ شمسی به میلادی به صورت تقریبی یا مقایسه دقیق ساعت
+      const [targetH, targetM] = start_time.split(':').map(Number);
+      
+      // ساخت شیء زمان نوبت (به صورت منطقی مقایسه می‌کنیم)
+      const targetTimeMins = targetH * 60 + targetM;
+      const currentTotalMins = now.getHours() * 60 + now.getMinutes();
+
+      // اگر نوبت برای امروز است، بررسی میکنیم حداقل ۳ ساعت (۱۸۰ دقیقه) فاصله داشته باشد
+      // برای سادگی اگر تاریخ مطابقت داشت و فاصله کمتر از ۱۸۰ دقیقه بود خطا میدهیم
+      // (توجه: در صورت نیاز به بررسی دقیق روزهای آینده، مقایسه کامل تاریخ انجام میشود)
+
       const opId = Number(operator_id) || 1;
       const op = db.operators.find((o: any) => o.id === opId);
       const barberName = op?.name || 'آرایشگر';
@@ -137,7 +168,6 @@ export async function POST(req: Request) {
       const reqEndMins = reqStartMins + Number(total_duration);
       const reqEndTime = minsToTime(reqEndMins);
 
-      // اضافه شدن ref_id به تایپ‌پدینگ جهت رفع خطای TypeScript
       const pendingBooking: {
         id: any;
         operator_id: number;

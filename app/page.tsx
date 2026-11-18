@@ -5,7 +5,7 @@ import {
   Calendar, Clock, ShieldCheck, User, Sparkles, Tag, Check, 
   AlertCircle, CheckCircle2, Scissors, Timer, Info, Share2, Copy, 
   X, Sun, Moon, Phone, MapPin, CreditCard, Lock, Image as ImageIcon, Ban,
-  Download, ArrowLeft, Smartphone, Share, PlusSquare, Search, AlertTriangle, Trash2
+  Download, ArrowLeft, Smartphone, Share, PlusSquare, Search, AlertTriangle, Trash2, RefreshCw
 } from 'lucide-react';
 
 function InstagramSvg({ className = "w-4 h-4" }: { className?: string }) {
@@ -78,7 +78,6 @@ function getFirstName(fullName: string) {
   return clean.split(' ')[0] || clean;
 }
 
-// تایمر خطی ۵ دقیقه‌ای پیشرفته
 function PaymentTimer({ expiresAt, onExpire }: { expiresAt?: string; onExpire: () => void }) {
   const [timeLeft, setTimeLeft] = useState<number>(300);
 
@@ -132,6 +131,7 @@ export default function BookingPage() {
   const [shamsiDays, setShamsiDays] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [currentTotalMins, setCurrentTotalMins] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const [db, setDb] = useState<any>({ 
     operators: [
@@ -172,6 +172,7 @@ export default function BookingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [customInvoice, setCustomInvoice] = useState<any | null>(null);
+  const [manualRefInput, setManualRefInput] = useState('');
   const [receipt, setReceipt] = useState<any | null>(null);
   const [copiedNote, setCopiedNote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -189,6 +190,7 @@ export default function BookingPage() {
   };
 
   const loadData = async () => {
+    setIsRefreshing(true);
     try {
       const res = await fetch('/api/booking');
       const data = await res.json();
@@ -210,6 +212,8 @@ export default function BookingPage() {
       }
     } catch {
       console.error('خطا در بارگذاری اطلاعات');
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 400);
     }
   };
 
@@ -220,28 +224,9 @@ export default function BookingPage() {
     const n = new Date();
     setCurrentTotalMins(n.getHours() * 60 + n.getMinutes());
     loadData();
-
-    // بررسی URL برای بازگشت موفق از تیکارت
-    const params = new URLSearchParams(window.location.search);
-    const paymentStatus = params.get('payment_status');
-    const bookingId = params.get('booking_id');
-    const refId = params.get('ref_id');
-
-    if (paymentStatus === 'success' && bookingId) {
-      fetch('/api/booking', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'check_booking_status', booking_id: bookingId })
-      }).then(r => r.json()).then(res => {
-        if (res.found && res.booking) {
-          setReceipt(res.booking);
-          setCustomInvoice(null);
-        }
-      });
-    }
   }, []);
 
-  // بررسی خودکار وضعیت پرداخت (Auto-Polling) هر ۳ ثانیه وقتی فاکتور باز است
+  // بررسی خودکار وضعیت پرداخت هر ۳ ثانیه
   useEffect(() => {
     if (!customInvoice?.booking_id && !customInvoice?.tracking_code) return;
 
@@ -268,6 +253,36 @@ export default function BookingPage() {
 
     return () => clearInterval(interval);
   }, [customInvoice]);
+
+  const handleManualPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualRefInput.trim()) {
+      showToast('لطفاً کد رهگیری یا کد پرداخت را وارد کنید.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submit_manual_payment_code',
+          booking_id: customInvoice.booking_id || customInvoice.tracking_code,
+          manual_ref: manualRefInput.trim()
+        })
+      });
+      const result = await res.json();
+      if (result.success) {
+        setReceipt(result.booking);
+        setCustomInvoice(null);
+        showToast('کد پرداخت ثبت و نوبت قطعی شد ✓');
+        loadData();
+      } else {
+        showToast(result.error || 'خطا در ثبت کد پرداخت');
+      }
+    } catch {
+      showToast('خطای شبکه در ثبت کد پرداخت');
+    }
+  };
 
   useEffect(() => {
     const opServices = (db.services || []).filter((s: any) => s.operator_id === operatorId);
@@ -315,7 +330,7 @@ export default function BookingPage() {
   const dayBookings = (db.bookings || []).filter((b: any) => b.operator_id === operatorId && b.date === selectedDate);
   const isSelectedDateToday = shamsiDays.length > 0 && selectedDate === shamsiDays[0]?.date;
 
-  const availableStartSlots: { time: string; available: boolean }[] = [];
+  const availableStartSlots: { time: string; available: boolean; tooClose?: boolean }[] = [];
   if (!isSelectedDateOff) {
     opIntervalsForDay.forEach((interval: any) => {
       const startM = timeToMins(interval.start_time);
@@ -323,7 +338,14 @@ export default function BookingPage() {
       for (let t = startM; t < endM; t += 30) {
         const candidateStart = t;
         const timeStr = minsToTime(candidateStart);
-        if (isSelectedDateToday && currentTotalMins > 0 && candidateStart <= currentTotalMins) continue;
+
+        let isTooClose = false;
+        if (isSelectedDateToday && currentTotalMins > 0) {
+          if (candidateStart <= currentTotalMins + 180) {
+            isTooClose = true;
+          }
+        }
+
         if (availableStartSlots.some(s => s.time === timeStr)) continue;
 
         let hasConflict = false;
@@ -335,7 +357,12 @@ export default function BookingPage() {
             break;
           }
         }
-        availableStartSlots.push({ time: timeStr, available: !hasConflict });
+
+        availableStartSlots.push({
+          time: timeStr,
+          available: !hasConflict && !isTooClose,
+          tooClose: isTooClose
+        });
       }
     });
     availableStartSlots.sort((a, b) => a.time.localeCompare(b.time));
@@ -412,32 +439,6 @@ export default function BookingPage() {
     }
   };
 
-  const handleCheckPaymentStatus = async () => {
-    if (!customInvoice?.tracking_code && !customInvoice?.booking_id) return;
-    try {
-      const res = await fetch('/api/booking', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'confirm_paid_booking',
-          tracking_code: customInvoice.tracking_code,
-          booking_id: customInvoice.booking_id
-        })
-      });
-      const result = await res.json();
-      if (result.success) {
-        setReceipt(result.booking);
-        setCustomInvoice(null);
-        showToast('پرداخت تایید شد و نوبت قطعی گردید ✓');
-        loadData();
-      } else {
-        showToast('هنوز تاییدیه درگاه ثبت نشده است.');
-      }
-    } catch {
-      showToast('خطا در بررسی وضعیت');
-    }
-  };
-
   const handleCustomerCancelBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = cancelRefInput.trim().toUpperCase();
@@ -481,15 +482,15 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* صفحه پرداخت اختصاصی تیکارت با بررسی خودکار */}
+      {/* صفحه پرداخت تیکارت همراه با کد دستی و دکمه رفرش */}
       {customInvoice && (
         <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-3xl flex items-center justify-center p-4 animate-fadeIn">
-          <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 relative">
+          <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 text-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-4 relative">
             <button onClick={() => setCustomInvoice(null)} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/10 transition z-10">
               <X className="w-4 h-4" />
             </button>
 
-            <div className="text-center space-y-1.5 border-b border-slate-800 pb-4">
+            <div className="text-center space-y-1.5 border-b border-slate-800 pb-3">
               <span className="text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-3.5 py-1 rounded-full font-black inline-flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-amber-400" /> درگاه پرداخت امن کارت‌به‌کارت
               </span>
@@ -498,7 +499,7 @@ export default function BookingPage() {
 
             <PaymentTimer expiresAt={customInvoice.expires_at} onExpire={() => { showToast('مهلت پرداخت به پایان رسید.'); setCustomInvoice(null); }} />
 
-            <div className="bg-slate-950 p-4.5 rounded-2xl border border-slate-800 text-center space-y-3">
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center space-y-2.5">
               <div className="space-y-1">
                 <span className="text-[11px] text-slate-400 block font-medium">مبلغ دقیق قابل واریز (با رقم یکتا):</span>
                 <div className="text-2xl font-black text-amber-400 font-mono">
@@ -519,7 +520,7 @@ export default function BookingPage() {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-950/80 to-slate-900 p-4.5 rounded-2xl border border-blue-800/50 space-y-3">
+            <div className="bg-gradient-to-br from-blue-950/80 to-slate-900 p-4 rounded-2xl border border-blue-800/50 space-y-2.5">
               <div className="flex justify-between items-center text-xs text-blue-300">
                 <span>شماره کارت مقصد ({customInvoice.bank_name}):</span>
                 <span className="font-bold text-white">{customInvoice.card_holder}</span>
@@ -527,18 +528,31 @@ export default function BookingPage() {
               <div className="font-mono text-xl font-black tracking-widest text-white text-center py-1.5 bg-black/40 rounded-xl border border-blue-500/20">
                 {customInvoice.card_number}
               </div>
-              <button onClick={() => { navigator.clipboard.writeText(customInvoice.card_number); showToast('شماره کارت کپی شد ✓'); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-3 rounded-xl font-bold transition flex items-center justify-center gap-2">
+              <button onClick={() => { navigator.clipboard.writeText(customInvoice.card_number); showToast('شماره کارت کپی شد ✓'); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-2">
                 <Copy className="w-4 h-4" /> کپی شماره کارت
               </button>
             </div>
 
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-300 text-center leading-relaxed">
-              ⏳ در حال بررسی خودکار وضعیت پرداخت... به محض تایید درگاه، نوبت شما خودکار قطعی می‌شود.
-            </div>
-
-            <button onClick={handleCheckPaymentStatus} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-2">
-              <CheckCircle2 className="w-4 h-4" /> بررسی دستی تاییدیه پرداخت
-            </button>
+            <form onSubmit={handleManualPaymentSubmit} className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+              <label className="text-[11px] font-bold text-amber-400 block">
+                کد رهگیری تراکنش یا فیش پرداختی (اختیاری):
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="مثال: TCO-98765"
+                  value={manualRefInput}
+                  onChange={(e) => setManualRefInput(e.target.value)}
+                  className="flex-1 bg-slate-900 border border-slate-700 text-white text-xs p-2.5 rounded-xl font-mono uppercase focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 rounded-xl text-xs font-bold transition"
+                >
+                  ثبت کد
+                </button>
+              </div>
+            </form>
 
             <button onClick={() => setCustomInvoice(null)} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition">
               بستن صفحه
@@ -547,7 +561,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* رسید موفقیت و نمایش نکات */}
+      {/* رسید موفقیت و نکات */}
       {receipt && (
         <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-slate-900 border border-emerald-500/40 text-white rounded-3xl p-6 shadow-2xl space-y-4 text-center">
@@ -560,11 +574,10 @@ export default function BookingPage() {
               <div className="flex justify-between"><span className="text-slate-400">کد پیگیری:</span><span className="font-mono text-amber-400">{receipt.ref_id}</span></div>
             </div>
 
-            {/* نکات مهم برای مشتری */}
             <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-[11px] text-blue-200 text-right space-y-1">
-              <p className="font-bold">📌 نکات مهم حضور در سالن:</p>
+              <p className="font-bold">📌 نکات مهم حضور در سالن الف:</p>
               <p>• لطفاً ۵ الی ۱۰ دقیقه قبل از ساعت رزرو در سالن حضور داشته باشید.</p>
-              <p>• کد پیگیری خود را برای لغو یا پیگیری‌های بعدی یادداشت کنید.</p>
+              <p>• ثبت نوبت حداقل از ۳ ساعت قبل امکان‌پذیر است تا از ازدحام جلوگیری شود.</p>
             </div>
 
             <button onClick={copyAppointmentText} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold transition">
@@ -577,7 +590,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      {/* فرم اصلی رزرو */}
+      {/* فرم اصلی رزرو همراه با دکمه رفرش */}
       <div className={`max-w-xl w-full ${c.card} border rounded-3xl p-6 sm:p-8 space-y-7 shadow-xl relative z-10 mb-6`} dir="rtl">
         <div className={`space-y-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} pb-5`}>
           <div className="flex justify-between items-center">
@@ -585,14 +598,25 @@ export default function BookingPage() {
               <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-500 border border-blue-500/20">
                 <Sparkles className="w-3.5 h-3.5" /> نوبت‌دهی آنلاین
               </div>
+
+              <button
+                type="button"
+                onClick={loadData}
+                className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold bg-slate-800/60 hover:bg-slate-800 text-slate-300 border-slate-700`}
+                title="بروزرسانی وضعیت نوبت‌ها"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
+                <span className="text-[11px]">بروزرسانی</span>
+              </button>
             </div>
+
             <button onClick={toggleClientTheme} className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold ${isDark ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-700'}`}>
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
           <div className="text-center space-y-1">
             <h1 className={`text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>{db.salon_info?.name || 'سالن پیرایش الف'}</h1>
-            <p className={`text-xs ${c.muted}`}>رزرو آنلاین با آرایشگران سالن الف</p>
+            <p className={`text-xs ${c.muted}`}>رزرو آنلاین با آرایشگران سالن الف (محدودیت ثبت: حداقل ۳ ساعت قبل)</p>
           </div>
         </div>
 
@@ -655,9 +679,9 @@ export default function BookingPage() {
           </div>
         </div>
 
-        {/* ساعت‌های شروع */}
+        {/* ساعت‌های شروع با اعمال محدودیت ۳ ساعته */}
         <div className="space-y-2.5">
-          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}><Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت:</label>
+          <label className={`text-xs font-bold ${c.text} flex items-center gap-1.5`}><Clock className="w-4 h-4 text-blue-500" /> ساعت شروع نوبت (حداقل ۳ ساعت قبل):</label>
           {isSelectedDateOff ? (
             <div className="py-5 text-center bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold">آرایشگر در این روز حضور ندارد.</div>
           ) : availableStartSlots.length === 0 ? (
@@ -667,8 +691,25 @@ export default function BookingPage() {
               {availableStartSlots.map((slot) => {
                 const isSelected = selectedStartTime === slot.time;
                 return (
-                  <button key={slot.time} type="button" disabled={!slot.available} onClick={() => setSelectedStartTime(slot.time)} className={`py-3 px-2 rounded-xl text-xs font-black border flex flex-col items-center justify-center transition ${!slot.available ? 'bg-rose-500/10 text-rose-400 cursor-not-allowed line-through' : isSelected ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg' : `${c.innerCard} text-emerald-500`}`}>
+                  <button 
+                    key={slot.time} 
+                    type="button" 
+                    disabled={!slot.available} 
+                    onClick={() => setSelectedStartTime(slot.time)} 
+                    className={`py-3 px-2 rounded-xl text-xs font-black border flex flex-col items-center justify-center transition ${
+                      slot.tooClose 
+                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 cursor-not-allowed opacity-75' 
+                        : !slot.available 
+                        ? 'bg-rose-500/10 text-rose-400 cursor-not-allowed line-through' 
+                        : isSelected 
+                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg' 
+                        : `${c.innerCard} text-emerald-500`
+                    }`}
+                  >
                     <span className="font-mono text-sm">{slot.time}</span>
+                    <span className="text-[9px] mt-0.5 opacity-90">
+                      {slot.tooClose ? 'کمتر از ۳ ساعت' : !slot.available ? 'رزرو شده' : 'قابل رزرو'}
+                    </span>
                   </button>
                 );
               })}
@@ -678,7 +719,7 @@ export default function BookingPage() {
 
         {/* فرم مشخصات و پرداخت */}
         {selectedStartTime && !isSelectedDateOff && (
-          <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-2xl space-y-4`}>
+          <form onSubmit={handleProceedPayment} className={`${c.innerCard} border p-5 rounded-2xl space-y-4 animate-fadeIn`}>
             <h3 className={`text-xs font-black ${c.text}`}>مشخصات مراجع:</h3>
             <div className="space-y-3">
               <input type="text" required placeholder="نام و نام خانوادگی" value={name} onChange={(e) => setName(e.target.value)} className={`w-full ${c.input} border text-xs p-3 rounded-xl focus:outline-none`} />
