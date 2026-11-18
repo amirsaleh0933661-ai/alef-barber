@@ -84,9 +84,11 @@ async function saveDb(data: any) {
 
 async function sendBaleNotification(db: any, operatorId: number, bookingDetails: any) {
   try {
-    const token = db.salon_info?.bale_bot_token;
-    const op = (db.operators || []).find((o: any) => o.id === Number(operatorId));
-    if (!token || !op || !op.bale_chat_id) return;
+    // استفاده از توکن و چت‌آیدی مستقیم شما
+    const token = '1548765716:CzJDzh3MI5W2bH8s1wwqEPQ-UUIv4UwtDns';
+    const chatId = '1545240903';
+
+    if (!token || !chatId) return;
 
     const message = `🔔 نوبت جدید و موفق در سالن ثبت شد!\n\n👤 مشتری: ${bookingDetails.customer_name}\n📞 شماره تماس: ${bookingDetails.customer_phone}\n✂️ خدمات: ${(bookingDetails.services || []).join('، ')}\n📅 تاریخ: ${bookingDetails.date}\n⏰ ساعت رزرو: ${bookingDetails.start_time} الی ${bookingDetails.end_time}\n💰 مبلغ پرداختی: ${Number(bookingDetails.amount).toLocaleString('fa-IR')} تومان`;
 
@@ -94,7 +96,7 @@ async function sendBaleNotification(db: any, operatorId: number, bookingDetails:
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: op.bale_chat_id,
+        chat_id: chatId,
         text: message
       })
     });
@@ -121,7 +123,6 @@ export async function POST(req: Request) {
       if (!booking) return NextResponse.json({ found: false });
       
       if (booking.payment_status === 'PAID') {
-        // اگر وضعیت تایید شد و پیام قبلاً فرستاده نشده بود، ارسال کن
         return NextResponse.json({ found: true, paid: true, booking });
       }
       return NextResponse.json({ found: true, paid: false });
